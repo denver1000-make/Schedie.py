@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# PyCharm
+.idea/
+*.iml
+
+# Environment
+.env
+venv/
+.env.*
+
+# Credentials
+*key.json
+
+# Bytecode / C extensions
+*.so
+*.pyd
+*.dll
+
+# OS junk
+.DS_Store
+Thumbs.db
+py-schedie-priv-key.json
