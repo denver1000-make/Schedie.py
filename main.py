@@ -41,19 +41,6 @@ def on_message(client, userdata, msg):
     else:
         print(msg.topic)
 
-
-mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport="websockets")
-mqttc.on_connect = on_connect
-mqttc.on_message = on_message
-mqttc.username_pw_set(username=mqtt_username, password=mqtt_pass)
-
-mqttc.connect(mqtt_url, 9001)
-
-# Blocking call that processes network traffic, dispatches callbacks and
-# handles reconnecting.
-# Other loop*() functions are available that give a threaded interface and a
-# manual interface.
-
 def process_sched():
     docs = firestoreDb.collection("schedules").stream()
     scheduler.remove_all_jobs()
@@ -104,4 +91,12 @@ def slave_action(room_id, msg_prepend):
     mqttc.publish(topic=topic, payload="From Schedie(Python)")
 
 
-mqttc.loop_forever()
+if __name__ == "__main__":
+    mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport="websockets")
+    mqttc.on_connect = on_connect
+    mqttc.on_message = on_message
+    mqttc.username_pw_set(username=mqtt_username, password=mqtt_pass)
+
+    mqttc.connect(mqtt_url, 9001)
+
+    mqttc.loop_forever()
