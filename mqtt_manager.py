@@ -50,3 +50,4 @@ def on_connect(client, userdata, flags, reason_code, properties):
     client.subscribe("collect_schedule")
     client.subscribe("set_minute_to_warn")
     client.subscribe("set_minute_gap")
+    client.subscribe("set_settings")

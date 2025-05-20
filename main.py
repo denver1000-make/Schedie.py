@@ -1,3 +1,4 @@
+import json
 import sys
 import os
 import firebase_admin
@@ -8,19 +9,22 @@ from firebase_admin import firestore, credentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 import time
+from models import TimeSlot, Cancellation
+import settings_manager
 from settings_manager import load_settings, set_the_minute_to_warn, set_minute_gap_to_ignore_turn_off_job, KEY_OF_MINUTE_GAP_TO_IGNORE_TURN_OFF_JOB, KEY_OF_MINUTE_MARK_JSON
 from mqtt_manager import MQTTManager, MQTTCallbackManager
-from scheduler import ScheduleManager, parse_time, generate_cron_trig
+from scheduler import ScheduleManager, parse_time, generate_cron_trig, TURN_ON_JOB, TURN_OFF_JOB
 import threading
-import SettingsTopic, ScheduleTopic, TURN_ON_BASE_TOPIC, TURN_OFF_BASE_TOPIC from mqtt_topics
-
+from mqtt_topics import SettingsTopic, ScheduleTopic, TURN_ON_BASE_TOPIC, TURN_OFF_BASE_TOPIC
+from zoneinfo import ZoneInfo
 class ScheduleInfo:
-    def __init__(self, room_id, schedule_start, schedule_end):
+    def __init__(self, room_id, schedule_start, schedule_end, day_name: str):
         self.room_id = room_id
         self.schedule_start = schedule_start
         self.schedule_end = schedule_end
+        self.day_name = day_name
 
-
+my_tz = ZoneInfo("Asia/Manila")
 list_of_scheduled_room_shutdown = []
 minute_to_ignore_next_start_job = 1
 
@@ -49,6 +53,7 @@ mqtt_manager = MQTTManager(
 
 schedule_manager = ScheduleManager()
 
+list_of_active_cancellations = []
 
 def publish_minute_mark_settings():
     global minute_mark_to_warn
@@ -82,9 +87,30 @@ def set_minute_gap_to_warn_mqtt_callback(client: mqtt.Client, msg: mqtt.MQTTMess
     gap = tmp_gap
 
 
-mqtt_callback_manager.register_callback(topic=ScheduleTopic.SUB_COLLECT_SCHEDULE msg_cbn=on_collect_schedule)
+def set_settings_received(client: mqtt.Client, msg: mqtt.MQTTMessage):
+    global path_of_setting_json, gap, minute_mark_to_warn
+    json_setting_str = msg.payload.decode()
+    obj = json.loads(json_setting_str)
+    received_min_to_warn = obj.get("minuteToWarn")
+    received_min_gap = obj.get("minuteGap")
+    print(f"Minute To Warn { received_min_to_warn }")
+    print(f"Minute Gap { received_min_gap }")
+    settings_manager.set_the_minute_to_warn(
+        path_of_setting_json=path_of_setting_json,
+        minute_to_warn=received_min_to_warn,
+        success=on_minute_mark_to_warn_changed)
+    settings_manager.set_minute_gap_to_ignore_turn_off_job(
+        path_of_setting_json=path_of_setting_json,
+        gap=received_min_gap)
+    gap = received_min_gap
+    minute_mark_to_warn = received_min_to_warn
+
+
+mqtt_callback_manager.register_callback(topic="set_settings", msg_cbn=set_settings_received)
+mqtt_callback_manager.register_callback(topic=ScheduleTopic.SUB_COLLECT_SCHEDULE, msg_cbn=on_collect_schedule)
 mqtt_callback_manager.register_callback(topic=SettingsTopic.SUB_SET_MINUTE_TO_WARN, msg_cbn=set_minute_mark_to_warn_callback)
 mqtt_callback_manager.register_callback(topic=SettingsTopic.SUB_SET_MINUTE_GAP, msg_cbn=set_minute_gap_to_warn_mqtt_callback)
+
 mqtt_manager.set_on_message_received(mqtt_callback_manager.on_message)
 
 
@@ -119,53 +145,105 @@ def process_schedule():
                         cron=cron_trig_for_start_job,
                         rm_id=rm_id,
                         start_time=start_time,
-                        end_time=end_time)
+                        end_time=end_time,
+                        day_name=day_name)
 
                     schedule_manager.set_turn_off_job(
                         job=turn_off_job,
-                        cron=cron_trig_for_stop_job, rm_id=rm_id)
+                        cron=cron_trig_for_stop_job,
+                        rm_id=rm_id,
+                        start_time=start_time,
+                        end_time=end_time,
+                        day_name=day_name)
 
                 except ValueError as e:
                     print("Invalid Cron", e)
 
 
-def turn_on_job(room_id, start_time, end_time):
+def on_snapshot(collection_snapshot, changes, read_time):
+    cancellations = []
+    for doc in collection_snapshot:
+        data = doc.to_dict()
+        cancellation = Cancellation(
+            id=doc.id,
+            teacherId=data.get("teacherId", ""),
+            teacherName=data.get("teacherName", ""),
+            teacherEmail=data.get("teacherEmail", ""),
+            day=data.get("day", ""),
+            roomId=data.get("roomId", ""),
+            timeSlot=TimeSlot(**data.get("timeSlot", {})),
+            isAccepted=data.get("isAccepted")
+        )
+
+        cancellations.append(cancellation)
+
+    # Optional: print or process the cancellations list
+    for c in cancellations:
+        if c.isAccepted:
+            list_of_active_cancellations.append(cancellation)
+
+
+firestoreDb.collection("classCancellationsRequest").on_snapshot(on_snapshot)
+
+def turn_on_job(room_id, start_time, end_time, day_name: str):
     print("Turn on job is performed")
     global list_of_scheduled_room_shutdown
     list_of_scheduled_room_shutdown.insert(1, ScheduleInfo(room_id=room_id,
-                                                           schedule_start=parse_time(start_time).strftime("%H:%M"),
-                                                           schedule_end=parse_time(end_time).strftime("%H:%M")))
-
+                                                           schedule_start=start_time,
+                                                           schedule_end=end_time,
+                                                           day_name=day_name))
+    for active_cancellation in list_of_active_cancellations:
+        active_timeslot = active_cancellation.timeSlot
+        if active_timeslot.startTime == start_time and active_timeslot.endTime == end_time:
+            list_of_active_cancellations.remove(active_cancellation)
+            return
     mqtt_manager.publish(topic=TURN_ON_BASE_TOPIC, msg=room_id, log=True)
 
 
-def turn_off_job(room_id):
-    now = datetime.now(timezone.utc)
+def turn_off_job(room_id, start_time, end_time, day_name: str):
+    global gap
+    now = datetime.now(my_tz)
     print("Turn off job is performed")
     all_jobs = schedule_manager.scheduler.get_jobs()
-    for job in all_jobs:
-        if job.name == TURN_ON_BASE_TOPIC and job.args[0] == room_id:
-            gap = (job.next_run_time - now).total_seconds() / 60.0
-            if gap <= minute_to_ignore_next_start_job:
-                print(f"SKIPPED OFF JOB FOR ROOM {room_id}, a schedule is close")
-                return
-    mqtt_manager.publish(topic=TURN_OFF_BASE_TOPIC, msg=room_id, True)
+    is_job_skip = schedule_manager.look_for_job_within_gap_and_job_type(
+        job_type=TURN_ON_JOB,
+        room_id=room_id,
+        end_time=end_time,
+        minute_to_ignore_next_start_job=gap,
+        day_name=day_name,
+        start_time=start_time,
+        now=now)
+    if not is_job_skip:
+        mqtt_manager.publish(topic=TURN_OFF_BASE_TOPIC, msg=room_id, log=True)
 
 
 def periodic_warning_job():
     global list_of_scheduled_room_shutdown
     global minute_mark_to_warn
-    date_time_of_now = datetime.now()
-    if len(list_of_scheduled_room_shutdown) > 0:
-        print(f"Length of turn off jobs on the way, {len(list_of_scheduled_room_shutdown)}")
+    global gap
+    date_time_of_now = datetime.now(my_tz)
     for v in list_of_scheduled_room_shutdown:
-        end_time_from_list = datetime.strptime(v.schedule_end, "%H:%M").time()
-        parsed_end_time_from_list = datetime.combine(date=datetime.today().date(), time=end_time_from_list)
+        end_time_from_list = datetime.strptime(v.schedule_end, "%H:%M%p").time()
+        parsed_end_time_from_list = datetime.combine(date=datetime.now(tz=my_tz).date(), time=end_time_from_list, tzinfo=my_tz)
         difference = parsed_end_time_from_list - date_time_of_now
         if int(minute_mark_to_warn) != -1:
             seconds = int(minute_mark_to_warn) * 60
             if (float(seconds) * .7) >= float((difference.total_seconds())) <= float(seconds):
-                mqtt_manager.publish(f"warning/{v.room_id}", f"to shutdown, in {minute_mark_to_warn}", log=false)
+                formatted_time_end = v.schedule_end
+                formatted_time_start = v.schedule_start
+                is_turn_off_job_close_to_turn_on_job = schedule_manager.look_for_job_within_gap_and_job_type(
+                    job_type=TURN_OFF_JOB,
+                    start_time=formatted_time_start,
+                    end_time=formatted_time_end,
+                    room_id=v.room_id,
+                    now=date_time_of_now,
+                    minute_to_ignore_next_start_job=gap,
+                    day_name=v.day_name
+                    )
+                if is_turn_off_job_close_to_turn_on_job:
+                    mqtt_manager.publish(f"warning/skipped_turn_off", f"{v.room_id}", log=True)
+                else:
+                    mqtt_manager.publish(f"warning/{v.room_id}", f"to shutdown, in {minute_mark_to_warn}", log=True)
                 list_of_scheduled_room_shutdown.remove(v)
 
 

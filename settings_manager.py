@@ -34,7 +34,7 @@ def set_the_minute_to_warn(path_of_setting_json, minute_to_warn, success):
 
 
 def set_minute_gap_to_ignore_turn_off_job(path_of_setting_json, gap: int):
-    print(f"Set minute_to_warn to {gap}\n")
+    print(f"Set minute_gap to {gap}\n")
     with open(path_of_setting_json, "r") as f:
         data = {}
         try:
@@ -45,3 +45,5 @@ def set_minute_gap_to_ignore_turn_off_job(path_of_setting_json, gap: int):
         with open(path_of_setting_json, "w") as f_for_write:
             json.dump(data, f_for_write, indent=4)
             print(f"Saved.\n")
+
+
