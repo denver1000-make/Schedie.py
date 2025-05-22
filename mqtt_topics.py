@@ -1,5 +1,5 @@
 TURN_ON_BASE_TOPIC = "turn_on"
-TURN_OFF_BASE_TOPIC = "turn_on"
+TURN_OFF_BASE_TOPIC = "turn_off"
 
 
 class SettingsTopic:

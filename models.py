@@ -22,4 +22,4 @@ class Cancellation:
     day: str = ""
     roomId: str = ""
     timeSlot: TimeSlot = field(default_factory=TimeSlot)
-    isAccepted: Optional[bool] = None  # null means pending
+    accepted: Optional[bool] = None  # null means pending

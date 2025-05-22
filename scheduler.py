@@ -44,28 +44,46 @@ class ScheduleManager:
             self,
             job_type: str,
             room_id: str,
-            start_time,
-            end_time,
-            minute_to_ignore_next_start_job,
-            now,
+            start_time: str,
+            end_time: str,
+            minute_to_ignore_next_start_job: int,
+            now: datetime,
             day_name: str
     ) -> bool:
-        job_name = gen_job_name(job_type=job_type,
-                                room_id=room_id,
-                                start_time=start_time,
-                                end_time=end_time,
-                                day_name=day_name)
-        job = self.scheduler.get_job(job_name)
+        all_jobs = self.scheduler.get_jobs()
 
-        if job and job.next_run_time:
-            gap = (job.next_run_time - now).total_seconds() / 60.0
-            return minute_to_ignore_next_start_job <= gap
+        current_job_id = gen_job_name(job_type, room_id, start_time, end_time, day_name)
+
+        for job in all_jobs:
+            job_id = job.id
+            if not job.next_run_time:
+                continue
+
+            if job_id == current_job_id:
+                continue
+
+            if not job_id.startswith(job_type):
+                continue
+
+            parts = job_id.split('/')
+            if len(parts) < 5:
+                continue
+
+            _, job_room_id, job_start, job_end, job_day = parts
+
+            if (
+                    job_room_id == room_id and
+                    job_day.lower() == day_name.lower()
+            ):
+                gap_minutes = (job.next_run_time - now).total_seconds() / 60.0
+                if 0 <= gap_minutes <= minute_to_ignore_next_start_job:
+                    return True
 
         return False
 
 
 def gen_job_name(job_type: str, room_id: str, start_time, end_time, day_name: str) -> str:
-    return f"{job_type}_{room_id}_{start_time}_{end_time}_{day_name}"
+    return f"{job_type}/{room_id}/{start_time}/{end_time}/{day_name}"
 
 
 def parse_time(raw_time):
