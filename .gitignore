@@ -19,6 +19,7 @@ venv/
 *.so
 *.pyd
 *.dll
+*.db
 
 # OS junk
 .DS_Store
