@@ -1,49 +1,59 @@
+import dataclasses
+import uuid
 from datetime import datetime, time
+from typing import Dict, List
 
+from apscheduler.job import Job
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from mqtt_topics import TURN_ON_BASE_TOPIC
+from modelsV2.model import ResolvedScheduleSlot
 
 TURN_ON_JOB = "turn_on"
 TURN_OFF_JOB = "turn_off"
 
-scheduler = None
+
+@dataclasses.dataclass
+class JobPair:
+    start_job: Job
+    turn_off_job: Job
 
 
 def init_scheduler():
-    global scheduler
     scheduler = BackgroundScheduler()
     scheduler.start()
     print("Schedule Manager initialized and started")
+    return scheduler
 
 
-def set_turn_on_job(rm_id: str, cron: CronTrigger, job, start_time, end_time, day_name: str):
+def set_turn_on_job(scheduler: BackgroundScheduler, rm_id: str, cron: CronTrigger, job: Job, start_time, end_time,
+                    day_name: str):
     print(f"A turn on job is registered with CRON {cron}")
     job_name = gen_job_name(job_type=TURN_ON_JOB, start_time=start_time, end_time=end_time, room_id=rm_id,
                             day_name=day_name)
     scheduler.add_job(job, trigger=cron, args=[rm_id, start_time, end_time, day_name], id=job_name)
 
 
-def set_turn_off_job(rm_id: str, cron: CronTrigger, job, start_time, end_time, day_name: str):
+def set_turn_off_job(scheduler: BackgroundScheduler, rm_id: str, cron: CronTrigger, job: Job, start_time, end_time,
+                     day_name: str):
     print(f"A turn off job is registered with CRON {cron}")
     job_name = gen_job_name(job_type=TURN_OFF_JOB, start_time=start_time, end_time=end_time, room_id=rm_id,
                             day_name=day_name)
     scheduler.add_job(job, trigger=cron, args=[rm_id, start_time, end_time, day_name], id=job_name)
 
 
-def set_warning_job(job):
+def set_warning_job(scheduler: BackgroundScheduler, job):
     print("A periodic warning job is registered")
     scheduler.add_job(job, trigger=IntervalTrigger(seconds=1))
 
 
-def purge_all_jobs():
+def purge_all_jobs(scheduler: BackgroundScheduler):
     print("Clearing all jobs")
     scheduler.remove_all_jobs()
 
 
-def register_pub_job_for_settings(constant_publish_job):
+def register_pub_job_for_settings(scheduler: BackgroundScheduler, constant_publish_job):
     scheduler.add_job(
         constant_publish_job,
         trigger=IntervalTrigger(seconds=2)
@@ -51,6 +61,7 @@ def register_pub_job_for_settings(constant_publish_job):
 
 
 def look_for_job_within_gap_and_job_type(
+        scheduler: BackgroundScheduler,
         job_type: str,
         room_id: str,
         start_time: str,
@@ -91,8 +102,31 @@ def look_for_job_within_gap_and_job_type(
     return False
 
 
-def gen_job_name(job_type: str, room_id: str, start_time, end_time, day_name: str) -> str:
-    return f"{job_type}/{room_id}/{start_time}/{end_time}/{day_name}"
+#
+# def gen_job_name(job_type: str, room_id: str, start_time, end_time, day_name: str) -> str:
+#     return f"{job_type}/{room_id}/{start_time}/{end_time}/{day_name}"
+
+def gen_job_name(
+        job_type: str,
+        room_id: str,
+        start_time: str,
+        end_time: str,
+        day_name: str,
+        unique: bool = True
+) -> str:
+    """
+    Generate a unique job ID for APScheduler.
+
+    Format:
+      {job_type}/{room_id}/{start_time}/{end_time}/{day_name}[-<suffix>]
+
+    If unique=True, appends a short UUID suffix to prevent duplication.
+    """
+    base_id = f"{job_type}/{room_id}/{start_time}/{end_time}/{day_name}"
+    if unique:
+        suffix = uuid.uuid4().hex[:6]  # 6-char hex for brevity
+        return f"{base_id}-{suffix}"
+    return base_id
 
 
 def parse_time(raw_time):

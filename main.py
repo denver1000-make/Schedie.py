@@ -7,7 +7,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 import time
-from models import TimeSlot, Cancellation
+from modelsV2 import TimeSlot, Cancellation
 import settings_manager
 from typing import List
 
@@ -23,7 +23,7 @@ from settings_manager import (
 from firestore_manager import FirestoreManager
 
 from mqtt_manager import MQTTManager, MQTTCallbackManager
-from scheduler import ScheduleManager, parse_time, generate_cron_trig, TURN_ON_JOB, TURN_OFF_JOB, gen_job_name
+from schedulerv2 import ScheduleManager, parse_time, generate_cron_trig, TURN_ON_JOB, TURN_OFF_JOB, gen_job_name
 import threading
 from mqtt_topics import SettingsTopic, ScheduleTopic, TURN_ON_BASE_TOPIC, TURN_OFF_BASE_TOPIC
 from zoneinfo import ZoneInfo

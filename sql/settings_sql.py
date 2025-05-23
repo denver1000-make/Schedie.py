@@ -9,9 +9,10 @@ KEY_OF_MINUTE_GAP_TO_IGNORE_TURN_OFF_JOB = "minute_gap_to_ignore_turn_off_job"
 
 LOG_KEY = "SQL"
 
+conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+
 
 def create_settings_table():
-    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
@@ -20,12 +21,10 @@ def create_settings_table():
         )
     ''')
     conn.commit()
-    conn.close()
     print(f"[{LOG_KEY}] Settings table created or exists.")
 
 
 def set_setting(key: str, value: int):
-    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(f'''
         INSERT INTO {TABLE_NAME} (key, value)
@@ -38,7 +37,6 @@ def set_setting(key: str, value: int):
 
 
 def get_setting(key: str) -> int:
-    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(f'''
         SELECT value FROM {TABLE_NAME} WHERE key = ?
