@@ -1,5 +1,5 @@
 # schedule_model.py
-
+import datetime
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -12,6 +12,9 @@ class TimeSlot:
     teacher: Optional[str] = None
     teacher_email: Optional[str] = None
     time_start_in_seconds: int = 0
+    start_time_date: Optional[datetime.datetime] = None
+    end_time_date: Optional[datetime.datetime] = None
+
 
 
 @dataclass
@@ -49,6 +52,9 @@ class ResolvedScheduleSlot:
     teacher: str
     teacher_email: str
     time_start_in_seconds: int
+    start_date_in_schedule: datetime.datetime
+    end_date_in_schedule: datetime.datetime
+
 
 @dataclass
 class ScheduledJob:

@@ -32,7 +32,6 @@ def set_setting(key: str, value: int):
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
     ''', (key, value))
     conn.commit()
-    conn.close()
     print(f"[{LOG_KEY}] '{key}' updated to {value}")
 
 
@@ -42,7 +41,6 @@ def get_setting(key: str) -> int:
         SELECT value FROM {TABLE_NAME} WHERE key = ?
     ''', (key,))
     row = cursor.fetchone()
-    conn.close()
     if row:
         print(f"[{LOG_KEY}] Retrieved setting '{key}': {row[0]}")
         return row[0]

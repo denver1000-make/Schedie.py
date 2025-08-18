@@ -1,5 +1,5 @@
 import sqlite3
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from modelsV2.model import ScheduledJob
 
@@ -79,6 +79,7 @@ def fetch_job_by_id(job_id: str) -> Optional[ScheduledJob]:
         return ScheduledJob(*row)
     return None
 
+
 def remove_job_by_job_id(job_id: str):
     cursor = conn.cursor()
     cursor.execute('''
@@ -102,7 +103,6 @@ def fetch_jobs_after_start_seconds_for_room_and_day(
         day_order: int,
         job_type: str
 ) -> List[ScheduledJob]:
-
     cursor = conn.cursor()
     cursor.execute('''
         SELECT id, job_id, room_id, job_type, day_order, start_seconds,

@@ -1,5 +1,6 @@
-import paho.mqtt.client as mqtt
 from typing import Callable, Dict
+
+import paho.mqtt.client as mqtt
 
 # Type alias
 MessageCallback = Callable[[mqtt.Client, mqtt.MQTTMessage], None]

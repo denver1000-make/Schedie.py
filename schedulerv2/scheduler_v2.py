@@ -1,14 +1,11 @@
 import dataclasses
 import uuid
 from datetime import datetime, time
-from typing import Dict, List
 
 from apscheduler.job import Job
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-
-from modelsV2.model import ResolvedScheduleSlot
 
 TURN_ON_JOB = "turn_on"
 TURN_OFF_JOB = "turn_off"

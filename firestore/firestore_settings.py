@@ -1,6 +1,5 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
-import os
 
 # Constants
 SETTINGS_COLLECTION = "settings"
