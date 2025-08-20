@@ -7,7 +7,7 @@ from google.cloud.firestore_v1 import DocumentSnapshot
 from google.cloud.firestore_v1.types import DocumentChange
 from google.protobuf.internal.well_known_types import Timestamp
 
-from modelsV2.model import ScheduleV2, ScheduleOfDay, TimeSlot, ResolvedScheduleSlot
+from src.modelsV2.model import ScheduleV2, ScheduleOfDay, TimeSlot, ResolvedScheduleSlot
 
 # Constants
 SCHEDULE_COLLECTION_PATH = "schedules"
