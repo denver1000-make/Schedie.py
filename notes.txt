@@ -1,3 +1,0 @@
-The day_order is the one that is used in the jobs.sql,
-you have to standardize that to the whole program,
-or it can crash, the android app has that as well.
