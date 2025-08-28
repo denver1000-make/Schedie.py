@@ -70,3 +70,7 @@ class ScheduledJob:
     teacher: Optional[str]
     teacher_email: Optional[str]
     status: str
+    timestamp: datetime.datetime
+    day_of_month: int
+    month: int
+    year: int

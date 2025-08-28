@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: schedule_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: mosquitto_broker
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/log:/mosquitto/log
+  app:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+    container_name: app_container
+    depends_on:
+      - mosquitto
+      - postgres
+    environment:
+      ENV_FILE: /app/config/.env
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+    command: ["sleep", "infinity"]
+volumes:
+  postgres_data:
+    driver: local

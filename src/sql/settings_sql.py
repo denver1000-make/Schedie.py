@@ -71,7 +71,7 @@ def get_settings_pg(conn_pool: pool.SimpleConnectionPool, key: str) -> int:
         with single_conn.cursor() as cursor:
             cursor: extensions.cursor
             cursor.execute(f'''
-                SELECT value FROM {TABLE_NAME} WHERE key = ?
+                SELECT value FROM {TABLE_NAME} WHERE key = %s
             ''', (key,))
             row = cursor.fetchone()
             if row:
@@ -98,7 +98,7 @@ def get_setting(key: str) -> int:
 
 
 # Optional: preload default values
-def init_default_settings():
-    create_settings_table()
-    set_setting(KEY_OF_MINUTE_MARK_JSON, 5)
-    set_setting(KEY_OF_MINUTE_GAP_TO_IGNORE_TURN_OFF_JOB, 3)
+# def init_default_settings():
+#     create_settings_table()
+#     set_setting(KEY_OF_MINUTE_MARK_JSON, 5)
+#     set_setting(KEY_OF_MINUTE_GAP_TO_IGNORE_TURN_OFF_JOB, 3)

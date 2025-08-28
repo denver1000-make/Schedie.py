@@ -1,3 +1,4 @@
+import datetime
 import sqlite3
 from typing import List, Optional
 from psycopg2 import pool, extensions
@@ -137,7 +138,11 @@ def pg_init_job_db(conn_pool: pool.SimpleConnectionPool):
                     subject TEXT,
                     teacher TEXT,
                     teacher_email TEXT,
-                    status TEXT DEFAULT 'scheduled'
+                    status TEXT DEFAULT 'scheduled',
+                    day_of_month INTEGER,
+                    month INTEGER,
+                    year INTEGER,
+                    timestamp TIMESTAMPTZ
                 );
             ''')
             single_conn.commit()
@@ -158,6 +163,10 @@ def pg_insert_job(
         subject: Optional[str],
         teacher: Optional[str],
         teacher_email: Optional[str],
+        timestamp: Optional[datetime.datetime],
+        day_of_month: int,
+        month: int,
+        year: int,
         status: str = "scheduled"
 ):
     single_conn: extensions.connection = conn_pool.getconn()
@@ -166,10 +175,11 @@ def pg_insert_job(
             cursor.execute('''
                 INSERT INTO scheduled_jobs (
                     job_id, room_id, job_type, day_order, start_seconds, start_time,
-                    end_time, subject, teacher, teacher_email, status
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    end_time, subject, teacher, teacher_email, status, day_of_month, 
+                    month, year, timestamp
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (job_id, room_id, job_type, day_order, start_seconds, start_time,
-                  end_time, subject, teacher, teacher_email, status))
+                  end_time, subject, teacher, teacher_email, status, day_of_month, month, year, timestamp))
             single_conn.commit()
             print(f"[DB] Inserted {job_type} job with ID {job_id} (Postgres)")
     finally:
@@ -182,7 +192,8 @@ def pg_fetch_job_by_id(conn_pool: pool.SimpleConnectionPool, job_id: str) -> Opt
         with single_conn.cursor() as cursor:
             cursor.execute('''
                 SELECT id, job_id, room_id, job_type, day_order, start_seconds,
-                       start_time, end_time, subject, teacher, teacher_email, status
+                       start_time, end_time, subject, teacher, teacher_email, status,
+                       day_of_month, month, year
                 FROM scheduled_jobs
                 WHERE job_id = %s
                 LIMIT 1
@@ -219,6 +230,33 @@ def pg_clear_all_jobs(conn_pool: pool.SimpleConnectionPool):
     finally:
         conn_pool.putconn(single_conn)
 
+def pg_query_room_for_nearby_star_sched(
+        conn_pool: pool.SimpleConnectionPool,
+        threshhold_minutes: int,
+        job_id: str
+    ):
+    single_conn: extensions.connection = conn_pool.getconn()
+    try:
+        with single_conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT COUNT(*) 
+                FROM scheduled_jobs t_off 
+                JOIN scheduled_jobs t_on ON (
+                    t_off.room_id = t_on.room_id
+                    AND t_on.job_type = 'turn_on'
+                    AND t_on.timestamp > t_off.timestamp
+                    AND t_on.timestamp <= t_off.timestamp + INTERVAL '%s minutes'
+                )
+                WHERE t_off.job_id = %s
+                AND t_off.job_type = 'turn_off'
+            ''', (threshhold_minutes, job_id))
+            results = cursor.fetchone()
+            if results is None:
+                return 0
+            count = results[0]
+            return count
+    finally:
+        conn_pool.putconn(single_conn)
 
 def pg_fetch_jobs_after_start_seconds_for_room_and_day(
         conn_pool: pool.SimpleConnectionPool,
@@ -232,7 +270,8 @@ def pg_fetch_jobs_after_start_seconds_for_room_and_day(
         with single_conn.cursor() as cursor:
             cursor.execute('''
                 SELECT id, job_id, room_id, job_type, day_order, start_seconds,
-                       start_time, end_time, subject, teacher, teacher_email, status
+                       start_time, end_time, subject, teacher, teacher_email, status,
+                       day_of_month, month, year
                 FROM scheduled_jobs
                 WHERE start_seconds > %s
                   AND room_id = %s

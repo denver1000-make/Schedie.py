@@ -49,7 +49,10 @@ def pg_create_schedule_table(conn_pool: pool.SimpleConnectionPool):
                     room_id TEXT NOT NULL,
                     run_time TEXT NOT NULL,
                     result TEXT,
-                    details TEXT
+                    details TEXT,
+                    day_of_month INTEGER,
+                    month INTEGER,
+                    year INTEGER
                 );
             ''')
             single_conn.commit()
@@ -100,7 +103,10 @@ def create_schedule_tables():
                 room_id TEXT NOT NULL,
                 run_time TEXT NOT NULL,
                 result TEXT,
-                details TEXT
+                details TEXT,
+                day_of_month INTEGER,
+                month INTEGER,
+                year INTEGER
             )
         ''')
 
