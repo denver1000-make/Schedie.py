@@ -8,7 +8,7 @@ __pycache__/
 *.iml
 
 # Environment
-.env
+config/.env
 venv/
 .env.*
 
@@ -29,3 +29,6 @@ py-schedie-priv-key.json
 #
 *priv-key*.json
 notes.txt
+*.txt
+*.conf
+.vscode/.*
