@@ -7,11 +7,11 @@ MessageCallback = Callable[[mqtt.Client, mqtt.MQTTMessage], None]
 
 # Global state
 _callbacks: Dict[str, MessageCallback] = {}
-mqtt_client: mqtt.Client = None
+mqtt_client: mqtt.Client | None = None
 
 
 # Configuration
-def init_mqtt(mqtt_url: str, mqtt_username: str, mqtt_password: str, mqtt_port: int):
+def init_mqtt(mqtt_url: str, mqtt_username: str, mqtt_password: str, mqtt_port: int) -> mqtt.Client:
     global mqtt_client
     print("[MQTT] Initializing MQTT client")
     mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport="websockets")
@@ -20,6 +20,7 @@ def init_mqtt(mqtt_url: str, mqtt_username: str, mqtt_password: str, mqtt_port: 
     mqtt_client.username_pw_set(username=mqtt_username, password=mqtt_password)
     mqtt_client.connect(mqtt_url, mqtt_port)
     mqtt_client.loop_start()
+    return mqtt_client
 
 
 # Callback registration
@@ -58,3 +59,8 @@ def publish(topic: str, msg, log: bool = True):
     if log:
         print(f"[MQTT] Publishing to topic '{topic}': {msg}")
     mqtt_client.publish(topic=topic, payload=msg, qos=2)
+
+def publish_v2(client: mqtt.Client, topic: str, msg, log: bool = True):
+    if log:
+        print(f"[MQTT] Publishing to topic '{topic}': {msg}")
+    client.publish(topic=topic, payload=msg, qos=2)
