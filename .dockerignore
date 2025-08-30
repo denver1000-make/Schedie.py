@@ -1,4 +1,4 @@
-requirements.tx
+requirements.txt
 .env
 gcp-enabled-priv-key-firebase.json
 pwfile.txt
