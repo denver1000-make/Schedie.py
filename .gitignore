@@ -20,7 +20,7 @@ venv/
 *.pyd
 *.dll
 *.db
-
+*.log
 # OS junk
 .DS_Store
 Thumbs.db
