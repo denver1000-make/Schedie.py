@@ -206,6 +206,7 @@ def pg_fetch_job_by_id(conn_pool: pool.SimpleConnectionPool, job_id: str) -> Opt
         conn_pool.putconn(single_conn)
 
 
+
 def pg_remove_job_by_job_id(conn_pool: pool.SimpleConnectionPool, job_id: str):
     single_conn: extensions.connection = conn_pool.getconn()
     try:

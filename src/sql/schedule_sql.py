@@ -276,12 +276,50 @@ def pg_fetch_all_job_logs(conn_pool: pool.SimpleConnectionPool) -> List[JobLogEn
     try:
         with single_conn.cursor() as cursor:
             cursor.execute(
-                "SELECT id, job_turn_on_id, job_turn_off_id, room_id, run_time, result, details FROM job_turn_on_logs"
+                '''
+                    SELECT 
+                        id, 
+                        job_turn_on_id, 
+                        job_turn_off_id, 
+                        room_id, 
+                        run_time, 
+                        result, 
+                        details 
+                    FROM job_turn_on_logs
+                '''
             )
             rows = cursor.fetchall()
             return [JobLogEntry(*row) for row in rows]
     finally:
         conn_pool.putconn(single_conn)
+
+def pg_match_running_jobs_to_scheduled_jobs(conn_pool: pool.SimpleConnectionPool):
+    single_conn: extensions.connection = conn_pool.getconn()
+    try:
+        with single_conn.cursor() as cursor:
+            cursor.execute(
+                '''
+                    SELECT 
+                        id, 
+                        job_turn_on_id, 
+                        job_turn_off_id, 
+                        room_id, 
+                        run_time, 
+                        result, 
+                        details 
+                    FROM job_turn_on_logs turn_on_logs 
+                    INNER JOIN
+                    scheduled_jobs jobs
+                    ON job_turn_on_id
+                    
+                '''
+            )
+            rows = cursor.fetchall()
+            return [JobLogEntry(*row) for row in rows]
+    finally:
+        conn_pool.putconn(single_conn)
+
+
 
 def pg_log_job_pair_run(
         conn_pool: pool.SimpleConnectionPool,

@@ -34,7 +34,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./config:/app/config
-    command: ["sleep", "infinity"]
+    entrypoint: ["python3", "-u", "-m", "src.main_v3"]
 volumes:
   postgres_data:
     driver: local

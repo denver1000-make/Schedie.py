@@ -24,7 +24,6 @@ venv/
 # OS junk
 .DS_Store
 Thumbs.db
-py-schedie-priv-key.json
 
 #
 *priv-key*.json

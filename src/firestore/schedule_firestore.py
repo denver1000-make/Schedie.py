@@ -6,7 +6,7 @@ from firebase_admin import firestore, credentials
 from google.cloud.firestore_v1 import DocumentSnapshot
 from google.cloud.firestore_v1.types import DocumentChange
 from google.protobuf.internal.well_known_types import Timestamp
-
+from google.cloud.firestore_v1 import Client as FirestoreClient
 from src.modelsV2.model import ScheduleV2, ScheduleOfDay, TimeSlot, ResolvedScheduleSlot
 
 # Constants
@@ -16,10 +16,10 @@ CLASS_CANCELLATION_REQUESTS = "classCancellationsRequest"
 TEMPORARY_SCHEDULE_COLLECTION = "temporary_schedules"
 
 
-def init_schedule():
+def init_schedule() -> FirestoreClient:
     cred = credentials.Certificate(os.getenv("SERVICE_ACCOUNT_PATH"))
     firebase_admin.initialize_app(cred)
-    db = firestore.client()
+    return firestore.client()
 
 
 # Firestore access
