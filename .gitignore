@@ -28,6 +28,5 @@ Thumbs.db
 #
 *priv-key*.json
 notes.txt
-*.txt
 *.conf
 .vscode/.*
