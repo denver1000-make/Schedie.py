@@ -1,7 +1,7 @@
 import dataclasses
 import uuid
 from datetime import datetime, time
-
+import asyncio
 from apscheduler.job import Job
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -18,10 +18,8 @@ class JobPair:
     turn_off_job: Job
 
 
-def init_scheduler():
-    scheduler = AsyncIOScheduler(
-        timezone="Asia/Manila"
-    )
+async def init_scheduler():
+    scheduler = AsyncIOScheduler()
     scheduler.start()
     print("Schedule Manager initialized and started")
     return scheduler

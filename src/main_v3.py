@@ -110,7 +110,7 @@ def clear_tables(pg_conn_pool: pg_pool.SimpleConnectionPool):
     pg_clear_all_jobs(conn_pool=pg_conn_pool)
 
 
-def clear_scheduler(scheduler: BackgroundScheduler):
+def clear_scheduler(scheduler):
     scheduler.remove_all_jobs()
 
 
@@ -466,15 +466,15 @@ def setup_test_data(
     insert_test_scheduled_jobs(pg_conn_pool, gap_of_job1_end_to_job2_start_min=10, duration_of_jobs_min=30)
     print("[TEST] Test data setup complete!")
 
-
-if __name__ == "__main__":
+async def main():
+    
     load_config()
     pg_conn_pool = load_pg()
     mqtt_client = load_mqtt()
     service_acc = get_service_acc_path()
 
     firestore_db = init_firestore(service_account_path=service_acc)
-    scheduler_v2 = init_scheduler()
+    scheduler_v2 = await init_scheduler()
     pg_init_job_db(conn_pool=pg_conn_pool)
 
     setup_tables(pg_conn_pool=pg_conn_pool)
@@ -496,10 +496,18 @@ if __name__ == "__main__":
     # Setup test data - customize timing here
     # First job ends in 2 minutes, second job ends in 5 minutes
 
-    try:
-        import time
-
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("[SYSTEM] Exiting gracefully.")
+if __name__ == "__main__":
+    import asyncio
+    
+    async def run_main():
+        await main()
+        
+        # Keep the program running
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            print("[SYSTEM] Exiting gracefully.")
+    
+    # Run the async main function
+    asyncio.run(run_main())
