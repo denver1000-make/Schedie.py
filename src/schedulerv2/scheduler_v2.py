@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, time
 
 from apscheduler.job import Job
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -18,7 +19,9 @@ class JobPair:
 
 
 def init_scheduler():
-    scheduler = BackgroundScheduler()
+    scheduler = AsyncIOScheduler(
+        timezone="Asia/Manila"
+    )
     scheduler.start()
     print("Schedule Manager initialized and started")
     return scheduler
