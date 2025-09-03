@@ -1,22 +1,22 @@
 from datetime import datetime
 import os
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List
 from zoneinfo import ZoneInfo
 from psycopg2 import pool as pg_pool
 from src.firestore.firestore_settings import init_firestore
 from src.firestore.schedule_firestore import extract_resolved_slots_by_day, process_changes_from_firestore
 from src.modelsV2.model import ResolvedScheduleSlot
-from src.mqtt.mqtt_manager import init_mqtt, publish, publish_v2
+from src.mqtt.mqtt_manager import init_mqtt, publish_v2
 from src.schedulerv2.scheduler_v2 import gen_job_name, generate_cron_trig, init_scheduler, parse_time
 from src.sql.db_connection import get_pg_connection
+from psycopg2 import pool, extensions
 import paho.mqtt.client as mqtt
 from apscheduler.schedulers.background import BackgroundScheduler
-from src.sql.jobs_sql import pg_clear_all_jobs, pg_fetch_job_by_id, pg_init_job_db, pg_insert_job, \
-    pg_query_room_for_nearby_star_sched
-from src.sql.schedule_sql import log_job_pair_run, pg_clear_all_schedule_data, pg_create_schedule_table, \
-    pg_fetch_all_job_logs, pg_log_job_pair_run
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from src.sql.jobs_sql import pg_clear_all_jobs, pg_init_job_db, pg_insert_job, pg_remove_job_by_job_id 
+from src.sql.schedule_sql import log_job_pair_run, pg_clear_all_schedule_data, pg_create_schedule_table, pg_log_job_pair_run, pg_remove_job_pair_run
 from src.sql.settings_sql import pg_create_settings_table
-from src.utils.time_utils.time_utils import str_time_to_standardize_time, strip_date_of_start_time, time_to_datetime
+from src.utils.time_utils.time_utils import strip_date_of_start_time
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -133,40 +133,45 @@ def turn_on(
         log=True
     )
 
-    if pg_conn_pool is not None:
+    if pg_pool is not None:
         pg_log_job_pair_run(
-            conn_pool=pg_conn_pool,
+            conn_pool=pg_pool,
             job_turn_off_id=job_turn_off_id,
             job_turn_on_id=job_turn_on_id,
             room_id=room_id
         )
-    log_job_pair_run(job_turn_off_id=job_turn_off_id, job_turn_on_id=job_turn_on_id, room_id=room_id)
 
 
 def turn_off(
         room_id: str,
-        day_name: str,
-        year: int,
-        month: int,
-        day_of_month: int,
-        time_in_sec: int,
-        start_time: str,
-        end_time: str,
         job_turn_off_id: str,
         job_turn_on_id: str,
-        mqtt_client: mqtt.Client
+        isTemp: bool,
+        mqtt_client: mqtt.Client,
+        pg_conn_pool: pool.SimpleConnectionPool
 ):
-    # if not list_of_turn_offs_to_skip.__contains__(job_turn_off_id):
-    #     publish("turn_off", msg=room_id, log=True)
-    # else:
-    #    print("Skipped turn off.")
-
+    
+    if isTemp: 
+        pg_remove_job_by_job_id(conn_pool=pg_conn_pool, job_id=job_turn_off_id)
+        pg_remove_job_by_job_id(conn_pool=pg_conn_pool, job_id=job_turn_on_id)
+    
+    pg_remove_job_pair_run(
+        conn_pool=pg_conn_pool,
+        room_id=room_id,
+        job_turn_off_id=job_turn_off_id,
+        job_turn_on_id=job_turn_on_id
+    )
+    
     publish_v2(client=mqtt_client, topic="turn_off", msg=room_id, log=True)
+
 
 
 def schedule_v2(
         list_of_day: List[str],
         day_and_timeslot_dict: Dict[str, List[ResolvedScheduleSlot]],
+        scheduler_v2: AsyncIOScheduler,
+        mqtt_client: mqtt.Client,
+        pg_conn_pool: pool.SimpleConnectionPool,
         isTemp: bool
 ):
     for day in list_of_day:
@@ -203,23 +208,18 @@ def schedule_v2(
 
             scheduler_v2.add_job(turn_on, trigger=turnOnBaseTrigger, args=[
                 timeslot.room_id,
-                timeslot.day_name,
-                timeslot.start_time,
-                timeslot.end_time,
                 turn_off_name,
                 turn_on_name,
                 mqtt_client,
                 pg_conn_pool
             ])
-            time_in_sec = timeslot.end_date_in_schedule
             scheduler_v2.add_job(turn_off, trigger=turnOffBaseTrigger, args=[
                 timeslot.room_id,
-                timeslot.day_name,
-                timeslot.start_time,
-                timeslot.end_time,
                 turn_off_name,
                 turn_on_name,
-                mqtt_client
+                isTemp,
+                mqtt_client,
+                pg_conn_pool
             ])
 
             schedule_date = strip_date_of_start_time(
@@ -262,209 +262,10 @@ def schedule_v2(
                 year=schedule_date.year
             )
 
-
-def register_temporary_schedule_handler(db, callback: Callable[
-    [List[DocumentSnapshot], List[DocumentChange], Timestamp], None]):
-    db.collection(TEMPORARY_SCHEDULE_COLLECTION).on_snapshot(callback)
-
-
-def on_temporary_schedule_handler(
-        doc_snapshot: List[DocumentSnapshot],
-        changes: List[DocumentChange],
-        read_time: Timestamp
-):
-    list_of_sched = process_changes_from_firestore(changes)
-    day_and_timeslot_dict = extract_resolved_slots_by_day(list_of_sched)
-    list_of_day = list(day_and_timeslot_dict.keys())
-    schedule_v2(list_of_day, day_and_timeslot_dict, True)
-
-
 def send_heartbeat(mqtt_client: mqtt.Client):
     mqtt_client.publish("hub_heartbeat", qos=2, payload=f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
-def one_time_job(firestoreDb: FirestoreClient, mqtt_client: mqtt.Client, pg_conn_pool: pg_pool.SimpleConnectionPool):
-    # job_logs = pg_fetch_all_job_logs(conn_pool=pg_conn_pool)
-    firestoreDb.collection("test").add({
-        "Hey": 1
-    })
-    print("")
-    # for job in job_logs:
-
-    # job_definition = pg_fetch_job_by_id(
-    #     conn_pool=pg_conn_pool,
-    #     job_id=job.job_turn_on_id
-    # )
-
-    # if job_definition is None:
-    #     raise ValueError(f"Job Definition for Job {job.job_turn_on_id}")
-
-    # standard_time = str_time_to_standardize_time(
-    #     time_str=job_definition.timestamp
-    # )
-
-    # now = datetime.now(ZoneInfo("Asia/Manila"))
-
-    # time_with_date = time_to_datetime(
-    #     standard_time,
-    #     now.year,
-    #     now.month,
-    #     now.day
-    # )
-
-    # print(f"None is {((time_with_date - now).seconds / 60 )} minutes away from turning off")
-
-
-def insert_test_job_logs(
-        pg_conn_pool: pg_pool.SimpleConnectionPool,
-):
-    """Insert test job turn on logs for testing detect_rooms_to_warn functionality"""
-    from datetime import datetime
-
-    # Test job 1 - Room A01
-    pg_log_job_pair_run(
-        conn_pool=pg_conn_pool,
-        job_turn_on_id="test_turn_on_A01_08:00AM_10:00AM_monday",
-        job_turn_off_id="test_turn_off_A01_08:00AM_10:00AM_monday",
-        room_id="A01",
-        result="success",
-        details="Test job for room A01"
-    )
-
-    # Test job 2 - Room B02
-    pg_log_job_pair_run(
-        conn_pool=pg_conn_pool,
-        job_turn_on_id="test_turn_on_B02_02:00PM_04:00PM_tuesday",
-        job_turn_off_id="test_turn_off_B02_02:00PM_04:00PM_tuesday",
-        room_id="B02",
-        result="success",
-        details="Test job for room B02"
-    )
-
-    print("[TEST] Inserted test job logs")
-
-
-def insert_test_scheduled_jobs(
-        pg_conn_pool: pg_pool.SimpleConnectionPool,
-        gap_of_job1_end_to_job2_start_min: int,
-        duration_of_jobs_min: int
-):
-    """
-    Insert test scheduled jobs with customizable timing
-    
-    Args:
-        minutes_from_now_job1: Minutes from current time for first job's end time
-        minutes_from_now_job2: Minutes from current time for second job's end time
-    """
-    from datetime import datetime, timedelta
-
-    current_time = datetime.now(tz=ZoneInfo("Asia/Manila"))
-
-    # Calculate end times based on parameters
-
-    job1_start_time = current_time
-    job1_end_time = current_time + timedelta(minutes=duration_of_jobs_min)
-
-    job2_start_time = job1_end_time + timedelta(minutes=gap_of_job1_end_to_job2_start_min)
-    job2_end_time = job2_start_time + timedelta(minutes=duration_of_jobs_min)
-
-    # Insert test job 1 - Turn Off job
-    pg_insert_job(
-        conn_pool=pg_conn_pool,
-        job_id="test_turn_off_A01_08:00AM_10:00AM_monday",
-        room_id="A01",
-        job_type="turn_off",
-        day_order=0,  # Monday
-        start_seconds=job1_end_time.hour * 3600 + job1_end_time.minute * 60,
-        start_time=job1_end_time.strftime("%I:%M%p"),
-        end_time=job1_end_time.strftime("%I:%M%p"),
-        subject="Test Subject 1",
-        teacher="Test Teacher 1",
-        teacher_email="teacher1@test.com",
-        timestamp=job1_end_time,
-        day_of_month=job1_end_time.day,
-        month=job1_end_time.month,
-        year=job1_end_time.year,
-        status="scheduled"
-    )
-
-    # Insert test job 1 - Turn On job
-    pg_insert_job(
-        conn_pool=pg_conn_pool,
-        job_id="test_turn_on_A01_08:00AM_10:00AM_monday",
-        room_id="A01",
-        job_type="turn_on",
-        day_order=0,  # Monday
-        start_seconds=job1_start_time.hour * 3600 + job1_start_time.minute * 60,
-        start_time=job1_start_time.strftime("%I:%M%p"),
-        end_time=job1_end_time.strftime("%I:%M%p"),
-        subject="Test Subject 1",
-        teacher="Test Teacher 1",
-        teacher_email="teacher1@test.com",
-        timestamp=job1_start_time,
-        day_of_month=job1_start_time.day,
-        month=job1_start_time.month,
-        year=job1_start_time.year,
-        status="scheduled"
-    )
-
-    # Insert test job 2 - Turn Off job
-    pg_insert_job(
-        conn_pool=pg_conn_pool,
-        job_id="test_turn_off_B02_02:00PM_04:00PM_tuesday",
-        room_id="A01",
-        job_type="turn_off",
-        day_order=1,  # Tuesday
-        start_seconds=job2_end_time.hour * 3600 + job2_end_time.minute * 60,
-        start_time=job2_end_time.strftime("%I:%M%p"),
-        end_time=job2_end_time.strftime("%I:%M%p"),
-        subject="Test Subject 2",
-        teacher="Test Teacher 2",
-        teacher_email="teacher2@test.com",
-        timestamp=job2_end_time,
-        day_of_month=job2_end_time.day,
-        month=job2_end_time.month,
-        year=job2_end_time.year,
-        status="scheduled"
-    )
-
-    # Insert test job 2 - Turn On job
-    pg_insert_job(
-        conn_pool=pg_conn_pool,
-        job_id="test_turn_on_B02_02:00PM_04:00PM_tuesday",
-        room_id="A01",
-        job_type="turn_on",
-        day_order=1,  # Tuesday
-        start_seconds=job2_start_time.hour * 3600 + job2_start_time.minute * 60,
-        start_time=job2_start_time.strftime("%I:%M%p"),
-        end_time=job2_end_time.strftime("%I:%M%p"),
-        subject="Test Subject 2",
-        teacher="Test Teacher 2",
-        teacher_email="teacher2@test.com",
-        day_of_month=job2_start_time.day,
-        month=job2_start_time.month,
-        year=job2_start_time.year,
-        timestamp=job2_start_time,
-        status="scheduled"
-    )
-
-
-def setup_test_data(
-        pg_conn_pool: pg_pool.SimpleConnectionPool,
-        job1_minutes_from_now: int = 2,
-        job2_minutes_from_now: int = 5
-):
-    """
-    Setup complete test data for testing detect_rooms_to_warn
-    
-    Args:
-        job1_minutes_from_now: Minutes from now when first job should end
-        job2_minutes_from_now: Minutes from now when second job should end
-    """
-    print("[TEST] Setting up test data...")
-    insert_test_job_logs(pg_conn_pool)
-    insert_test_scheduled_jobs(pg_conn_pool, gap_of_job1_end_to_job2_start_min=10, duration_of_jobs_min=30)
-    print("[TEST] Test data setup complete!")
 
 async def main():
     
@@ -486,15 +287,26 @@ async def main():
         trigger=IntervalTrigger(seconds=1),
         args=[mqtt_client]
     )
+    
+    def on_temp_schedule_updated(col_snapshot, changes, read_time):
+        added_changes = [change for change in changes if change.type.name == 'ADDED']
+        if added_changes:
+            slots = process_changes_from_firestore(docs=changes)
+            normalized_dat_and_timeslot_dict = extract_resolved_slots_by_day(schedules=slots)
+            schedule_v2(
+                list(normalized_dat_and_timeslot_dict.keys()),
+                day_and_timeslot_dict=normalized_dat_and_timeslot_dict,
+                isTemp=True,
+                mqtt_client=mqtt_client,
+                scheduler_v2=scheduler_v2,
+                pg_conn_pool=pg_conn_pool,
+            )
+            
+    
+    firestore_db.collection("temporary_schedules").on_snapshot(
+        callback=on_temp_schedule_updated
+    )
 
-    # scheduler_v2.add_job(
-    #     func=one_time_job,
-    #     trigger=IntervalTrigger(seconds=5),  # Runs immediately once
-    #     args=[firestore_db, mqtt_client, pg_conn_pool]
-    # )
-
-    # Setup test data - customize timing here
-    # First job ends in 2 minutes, second job ends in 5 minutes
 
 if __name__ == "__main__":
     import asyncio

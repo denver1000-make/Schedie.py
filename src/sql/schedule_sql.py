@@ -319,7 +319,31 @@ def pg_match_running_jobs_to_scheduled_jobs(conn_pool: pool.SimpleConnectionPool
     finally:
         conn_pool.putconn(single_conn)
 
-
+def pg_remove_job_pair_run(
+        conn_pool: pool.SimpleConnectionPool,
+        job_turn_on_id: str,
+        job_turn_off_id: str,
+        room_id: str
+):
+    """
+    Remove a job log entry matching the job_turn_on_id, job_turn_off_id, and room_id.
+    """
+    single_conn: extensions.connection = conn_pool.getconn()
+    try:
+        with single_conn.cursor() as cursor:
+            cursor.execute(
+                '''
+                DELETE FROM job_turn_on_logs
+                WHERE job_turn_on_id = %s
+                  AND job_turn_off_id = %s
+                  AND room_id = %s
+                ''',
+                (job_turn_on_id, job_turn_off_id, room_id)
+            )
+            single_conn.commit()
+            print(f"[DB] Removed job log for ON:{job_turn_on_id} OFF:{job_turn_off_id} ROOM:{room_id}")
+    finally:
+        conn_pool.putconn(single_conn)
 
 def pg_log_job_pair_run(
         conn_pool: pool.SimpleConnectionPool,

@@ -6,17 +6,21 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: schedule_db
+    networks:
+      - default
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
-  mosquitto:
+  mosquitto_rpi:
     image: eclipse-mosquitto
     container_name: mosquitto_broker
+    networks:
+      - shared_test_network_mqtt
+      - default
     ports:
-      - "1883:1883"
       - "9001:9001"
+      - "1883:1883"
     volumes:
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/config:/mosquitto/config
@@ -26,8 +30,10 @@ services:
       context: .
       dockerfile: ./docker/Dockerfile
     container_name: app_container
+    networks:
+      - default
     depends_on:
-      - mosquitto
+      - mosquitto_rpi
       - postgres
     environment:
       ENV_FILE: /app/config/.env
@@ -38,3 +44,6 @@ services:
 volumes:
   postgres_data:
     driver: local
+networks:
+    shared_test_network_mqtt:
+        external: true

@@ -15,15 +15,19 @@ Usage:
     python firestore_offline_test.py
 """
 
+from psycopg2 import pool
 import time
 import os
 from datetime import datetime
 from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
+from src.main_v3 import turn_off, turn_on
+from src.sql.schedule_sql import pg_log_job_pair_run
 from src.firestore.firestore_settings import init_firestore
 from google.cloud.firestore_v1 import Client as FirestoreClient
-
+import paho.mqtt.client as mqtt
 
 def my_scheduled_function(firestore_db: FirestoreClient):
     """
@@ -106,6 +110,45 @@ def setup_scheduler(firestore_db: FirestoreClient):
     return scheduler
 
 
+def test_job_log_insert_and_clearing(
+        pg_conn_pool: pool.SimpleConnectionPool,
+        scheduler: AsyncIOScheduler,
+        mqtt_client: mqtt.Client
+):
+    start_id = "test_turn_on_B02_02:00PM_04:00PM_tuesday"
+    end_id = "test_turn_off_B02_02:00PM_04:00PM_tuesday"
+    room_id = "B02"
+    
+    from src.sql.jobs_sql import pg_fetch_job_log_run
+    # Call turn_on synchronously
+    print("Calling turn_on...")
+    turn_on(
+        room_id,
+        end_id,
+        start_id,
+        mqtt_client,
+        pg_conn_pool
+    )
+    # Check if job log run exists after turn_on
+    log_exists = pg_fetch_job_log_run(conn_pool=pg_conn_pool, job_turn_on_id=start_id, job_turn_off_id=end_id, room_id=room_id)
+    print(f"After turn_on, job log exists: {bool(log_exists)}")
+
+    # Call turn_off synchronously
+    print("Calling turn_off...")
+    turn_off(
+        room_id,
+        end_id,
+        start_id,
+        True,
+        mqtt_client,
+        pg_conn_pool
+    )
+    # Check if job log run exists after turn_off
+    log_exists = pg_fetch_job_log_run(conn_pool=pg_conn_pool, job_turn_on_id=start_id, job_turn_off_id=end_id, room_id=room_id)
+    print(f"After turn_off, job log exists: {bool(log_exists)}")
+
+
+
 def main():
     """
     Main function to start the scheduler.
@@ -121,53 +164,25 @@ def main():
     print("📋 Function will execute every 5 seconds")
     print("� Connecting to Firestore...")
     print("�🛑 Press Ctrl+C to stop")
-    print("-" * 50)
-    
-    scheduler = None
-    
     try:
-        # Load configuration and initialize Firestore
+        # Load configuration
         load_config()
-        service_acc = get_service_acc_path()
-        firestore_db = init_firestore(service_account_path=service_acc)
-        print("✅ Firestore connection established")
-        
-        test_collection = firestore_db.collection("test")
-        docs = test_collection.get()
-        
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{current_time}] Scheduled function executed! 🚀")
-        
-        print(f"📊 Found {len(docs)} documents in 'test' collection")
-        
-        # Add a new document to the test collection
-        new_doc_data = {
-            "timestamp": current_time,
-            "message": "Document added by scheduler",
-            "execution_count": len(docs) + 1,
-            "scheduler_type": "5_second_interval"
-        }
-        
-        # Add the document
-        doc_ref = test_collection.add(new_doc_data)
-        print(f"✅ Added new document with ID: {doc_ref[1].id}")
-        
-        # Initialize scheduler with Firestore client
-        # scheduler = setup_scheduler(firestore_db)
-        
-        # Start the scheduler (this will block the main thread)
-        # scheduler.start()
-        
+        # Initialize PostgreSQL connection pool
+        from src.main_v3 import load_pg, load_mqtt, setup_tables, clear_tables
+        pg_conn_pool = load_pg()
+        # Initialize MQTT client
+        mqtt_client = load_mqtt()
+    # Create and initialize tables using Postgres
+        setup_tables(pg_conn_pool=pg_conn_pool)
+        clear_tables(pg_conn_pool=pg_conn_pool)
+        # Create a scheduler instance
+        scheduler = AsyncIOScheduler()
+        # Call the test function
+        test_job_log_insert_and_clearing(pg_conn_pool, scheduler, mqtt_client)
     except KeyboardInterrupt:
         print("\n🛑 Shutdown signal received")
-        if scheduler:
-            scheduler.shutdown()
         print("✅ Scheduler stopped gracefully")
     except Exception as e:
         print(f"❌ Error occurred: {e}")
-        if scheduler:
-            scheduler.shutdown()
 
-
-if __name__ == "__main__":
-    main()
+main()
