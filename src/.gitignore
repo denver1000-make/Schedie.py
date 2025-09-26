@@ -1,0 +1,14 @@
+# Test files
+test_*.py
+tests/
+__pycache__/
+
+# Documentation files are now included in repository
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp

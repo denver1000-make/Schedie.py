@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SchedulerDashboard - MQTT Schedule Monitor</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f8f9fa;
+            color: #212529;
+            line-height: 1.6;
+        }
+        
+        .wrapper {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: #233362;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        
+        .sidebar-brand {
+            padding: 1.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            font-size: 1.25rem;
+            font-weight: 600;
+            text-decoration: none;
+            color: white;
+        }
+        
+        .sidebar-brand .brand-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            font-size: 20px;
+        }
+        
+        .sidebar-nav {
+            flex: 1;
+            padding: 1rem 0;
+        }
+        
+        .nav-item {
+            margin: 0.25rem 0;
+        }
+        
+        .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1.5rem;
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            transition: all 0.2s ease;
+            border-radius: 0;
+            margin: 0 1rem;
+            border-radius: 8px;
+        }
+        
+        .nav-link:hover,
+        .nav-link.active {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .nav-link i {
+            width: 20px;
+            height: 20px;
+            margin-right: 12px;
+            stroke-width: 2;
+        }
+        
+        /* Main content */
+        .main {
+            flex: 1;
+            margin-left: 280px;
+            background: #f8f9fa;
+        }
+        
+        .topbar {
+            background: white;
+            border-bottom: 1px solid #e3e6f0;
+            padding: 1rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .topbar-title {
+            font-size: 1.75rem;
+            font-weight: 400;
+            color: #5a5c69;
+            margin: 0;
+        }
+        
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            color: #6c757d;
+            font-size: 0.875rem;
+        }
+        
+        .avatar {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        
+        .content {
+            padding: 1.5rem;
+        }
+        
+        /* Cards */
+        .card-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+            border: 1px solid #e3e6f0;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        
+        .card-header {
+            padding: 1rem 1.5rem;
+            background: #f8f9fc;
+            border-bottom: 1px solid #e3e6f0;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #5a5c69;
+            margin: 0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .card-title i {
+            margin-right: 8px;
+            width: 16px;
+            height: 16px;
+        }
+        
+        .card-body {
+            padding: 1.5rem;
+            flex: 1;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+            border-left: 4px solid #4e73df;
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            transition: all 0.3s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0.25rem 2rem 0 rgba(58, 59, 69, 0.2);
+        }
+        
+        .stat-card.success { border-left-color: #1cc88a; }
+        .stat-card.warning { border-left-color: #f6c23e; }
+        .stat-card.info { border-left-color: #36b9cc; }
+        .stat-card.danger { border-left-color: #e74a3b; }
+        
+        .stat-content {
+            flex: 1;
+        }
+        
+        .stat-label {
+            color: #5a5c69;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 0.25rem;
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #5a5c69;
+        }
+        
+        .stat-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-left: 1rem;
+        }
+        
+        .stat-icon.primary { background: rgba(78, 115, 223, 0.1); color: #4e73df; }
+        .stat-icon.success { background: rgba(28, 200, 138, 0.1); color: #1cc88a; }
+        .stat-icon.warning { background: rgba(246, 194, 62, 0.1); color: #f6c23e; }
+        .stat-icon.info { background: rgba(54, 185, 204, 0.1); color: #36b9cc; }
+        .stat-icon.danger { background: rgba(231, 74, 59, 0.1); color: #e74a3b; }
+        
+        /* Tables */
+        .table-responsive {
+            overflow-x: auto;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 0;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.75rem;
+            vertical-align: top;
+            border-top: 1px solid #e3e6f0;
+            text-align: left;
+        }
+        
+        .table thead th {
+            background: #f8f9fc;
+            border-bottom: 2px solid #e3e6f0;
+            border-top: 0;
+            font-weight: 700;
+            color: #5a5c69;
+            font-size: 0.875rem;
+        }
+        
+        .table tbody tr:hover {
+            background: #f8f9fc;
+        }
+        
+        /* Schedule specific styles */
+        .schedule-slot {
+            margin-bottom: 0.75rem;
+            padding: 0.75rem;
+            border-radius: 6px;
+            border-left: 4px solid;
+            background: white;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        }
+        
+        .schedule-slot.temporary {
+            border-left-color: #f6c23e;
+            background: #fff9e6;
+        }
+        
+        .schedule-slot.permanent {
+            border-left-color: #4e73df;
+            background: #f0f4ff;
+        }
+        
+        .schedule-time {
+            font-weight: 700;
+            color: #2e59d9;
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .schedule-room {
+            color: #5a5c69;
+            font-size: 0.75rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .schedule-subject {
+            color: #3d3d3d;
+            font-weight: 600;
+            font-size: 0.8rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .schedule-teacher {
+            color: #858796;
+            font-size: 0.7rem;
+        }
+        
+        .schedule-badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.65rem;
+            font-weight: 700;
+            border-radius: 0.35rem;
+            text-transform: uppercase;
+        }
+        
+        .schedule-badge.temporary {
+            background: #f6c23e;
+            color: #8a6914;
+        }
+        
+        .schedule-badge.permanent {
+            background: #4e73df;
+            color: white;
+        }
+        
+        /* Buttons */
+        .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            line-height: 1.5;
+            text-align: center;
+            vertical-align: middle;
+            cursor: pointer;
+            user-select: none;
+            border: 1px solid transparent;
+            border-radius: 0.35rem;
+            transition: all 0.15s ease-in-out;
+            text-decoration: none;
+        }
+        
+        .btn-primary {
+            color: white;
+            background: #4e73df;
+            border-color: #4e73df;
+        }
+        
+        .btn-primary:hover {
+            background: #2e59d9;
+            border-color: #2653d4;
+        }
+        
+        .btn-success {
+            color: white;
+            background: #1cc88a;
+            border-color: #1cc88a;
+        }
+        
+        .btn-success:hover {
+            background: #17a673;
+            border-color: #169b6b;
+        }
+        
+        .btn-warning {
+            color: #fff;
+            background: #f6c23e;
+            border-color: #f6c23e;
+        }
+        
+        .btn-warning:hover {
+            background: #f4b619;
+            border-color: #f4b30d;
+        }
+        
+        .btn-sm {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.75rem;
+        }
+        
+        /* Status indicators */
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        
+        .status-indicator.connected {
+            background: rgba(28, 200, 138, 0.1);
+            color: #1cc88a;
+            border: 1px solid rgba(28, 200, 138, 0.2);
+        }
+        
+        .status-indicator.disconnected {
+            background: rgba(231, 74, 59, 0.1);
+            color: #e74a3b;
+            border: 1px solid rgba(231, 74, 59, 0.2);
+        }
+        
+        .status-indicator.unknown {
+            background: rgba(133, 135, 150, 0.1);
+            color: #858796;
+            border: 1px solid rgba(133, 135, 150, 0.2);
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.connected { background: #1cc88a; }
+        .status-dot.disconnected { background: #e74a3b; }
+        .status-dot.unknown { background: #858796; }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1.5rem;
+            color: #858796;
+        }
+        
+        .empty-state i {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+        
+        .empty-state h3 {
+            margin-bottom: 0.5rem;
+            color: #5a5c69;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                margin-left: -280px;
+                transition: margin-left 0.3s;
+            }
+            
+            .main {
+                margin-left: 0;
+            }
+            
+            .card-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <a class="sidebar-brand" href="/">
+                <div class="brand-icon">
+                    📊
+                </div>
+                <span>SchedulerDashboard</span>
+            </a>
+            
+            <div class="sidebar-nav">
+                <div class="nav-item">
+                    <a class="nav-link active" href="/">
+                        <i data-feather="sliders"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a class="nav-link" href="#schedules">
+                        <i data-feather="calendar"></i>
+                        <span>Schedules</span>
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a class="nav-link" href="#bridge">
+                        <i data-feather="activity"></i>
+                        <span>MQTT Bridge</span>
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a class="nav-link" href="#analytics">
+                        <i data-feather="bar-chart-2"></i>
+                        <span>Analytics</span>
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a class="nav-link" href="#settings">
+                        <i data-feather="settings"></i>
+                        <span>Settings</span>
+                    </a>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Main content -->
+        <main class="main">
+            <div class="topbar">
+                <h1 class="topbar-title">Scheduler Dashboard</h1>
+                <div class="topbar-actions">
+                    <div class="user-info">
+                        <span>Database: <%= dbInfo %></span>
+                        <div class="avatar">DB</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="content">
+                <!-- Stats Cards -->
+                <div class="card-row">
+                    <div class="stat-card">
+                        <div class="stat-content">
+                            <div class="stat-label">Total Schedules</div>
+                            <div class="stat-number"><%= scheduleStats.totalSchedules %></div>
+                        </div>
+                        <div class="stat-icon primary">
+                            <i data-feather="calendar"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card success">
+                        <div class="stat-content">
+                            <div class="stat-label">Schedule Slots</div>
+                            <div class="stat-number"><%= scheduleStats.totalSlots %></div>
+                        </div>
+                        <div class="stat-icon success">
+                            <i data-feather="clock"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card warning">
+                        <div class="stat-content">
+                            <div class="stat-label">Temporary Slots</div>
+                            <div class="stat-number"><%= scheduleStats.tempSchedules %></div>
+                        </div>
+                        <div class="stat-icon warning">
+                            <i data-feather="alert-circle"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card success">
+                        <div class="stat-content">
+                            <div class="stat-label">Running Jobs</div>
+                            <div class="stat-number"><%= scheduleStats.runningJobs || 0 %></div>
+                        </div>
+                        <div class="stat-icon success">
+                            <i data-feather="activity"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card danger">
+                        <div class="stat-content">
+                            <div class="stat-label">Cancelled Slots</div>
+                            <div class="stat-number"><%= scheduleStats.cancelledSlots || 0 %></div>
+                        </div>
+                        <div class="stat-icon danger">
+                            <i data-feather="x-circle"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card info" id="bridgeStatusCard">
+                        <div class="stat-content">
+                            <div class="stat-label">MQTT Bridge</div>
+                            <div class="stat-number" id="bridgeStatusText">Loading...</div>
+                        </div>
+                        <div class="stat-icon info" id="bridgeStatusIndicator">
+                            <i data-feather="activity"></i>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Weekly Schedule with Status -->
+                <div class="card-row">
+                    <div class="card" style="grid-column: span 3;">
+                        <div class="card-header">
+                            <h5 class="card-title">
+                                <i data-feather="calendar"></i>
+                                Weekly Schedule with Status
+                            </h5>
+                            <div style="margin-left: auto; display: flex; gap: 0.5rem;">
+                                <button class="btn btn-primary btn-sm" onclick="window.location.reload()">
+                                    <i data-feather="refresh-cw" style="width: 14px; height: 14px; margin-right: 4px;"></i>
+                                    Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <% if (Object.keys(weeklySchedule).every(day => weeklySchedule[day].length === 0)) { %>
+                                <div class="empty-state">
+                                    <i data-feather="calendar" style="width: 64px; height: 64px; opacity: 0.3;"></i>
+                                    <h3>No schedules found</h3>
+                                    <p>No schedule slots are currently in the database.</p>
+                                </div>
+                            <% } else { %>
+                                <div class="table-responsive">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 15%;">Day</th>
+                                                <th style="width: 45%;">Schedule Slots</th>
+                                                <th style="width: 25%;">Status</th>
+                                                <th style="width: 15%;">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <% ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].forEach(day => { %>
+                                                <tr>
+                                                    <td><strong><%= day %></strong></td>
+                                                    <td>
+                                                        <% if (weeklySchedule[day] && weeklySchedule[day].length > 0) { %>
+                                                            <% weeklySchedule[day].forEach((slot, index) => { %>
+                                                                <div class="schedule-slot <%= slot.is_temporary ? 'temporary' : 'permanent' %>" style="margin-bottom: 0.75rem;">
+                                                                    <div class="schedule-time">
+                                                                        <%= slot.start_time %> - <%= slot.end_time %>
+                                                                    </div>
+                                                                    <div class="schedule-room">
+                                                                        <i data-feather="map-pin" style="width: 12px; height: 12px; margin-right: 4px;"></i>
+                                                                        Room <%= slot.room_id %>
+                                                                    </div>
+                                                                    <% if (slot.subject) { %>
+                                                                        <div class="schedule-subject">
+                                                                            <i data-feather="book" style="width: 12px; height: 12px; margin-right: 4px;"></i>
+                                                                            <%= slot.subject %>
+                                                                        </div>
+                                                                    <% } %>
+                                                                    <% if (slot.teacher) { %>
+                                                                        <div class="schedule-teacher">
+                                                                            <i data-feather="user" style="width: 12px; height: 12px; margin-right: 4px;"></i>
+                                                                            <%= slot.teacher %>
+                                                                        </div>
+                                                                    <% } %>
+                                                                    <% if (slot.is_temporary) { %>
+                                                                        <span class="schedule-badge temporary">Temporary</span>
+                                                                    <% } else { %>
+                                                                        <span class="schedule-badge permanent">Permanent</span>
+                                                                    <% } %>
+                                                                </div>
+                                                            <% }); %>
+                                                        <% } else { %>
+                                                            <span class="text-muted">No scheduled slots</span>
+                                                        <% } %>
+                                                    </td>
+                                                    <td>
+                                                        <% if (weeklySchedule[day] && weeklySchedule[day].length > 0) { %>
+                                                            <% weeklySchedule[day].forEach((slot, index) => { %>
+                                                                <div style="margin-bottom: 0.75rem; display: flex; align-items: center; min-height: 35px;">
+                                                                    <% const slotKey = `${slot.room_id}_${slot.start_time}_${slot.end_time}`; %>
+                                                                    <% if (runningJobs[slotKey]) { %>
+                                                                        <span class="status-indicator connected" style="font-size: 0.75rem; padding: 0.375rem 0.75rem;">
+                                                                            <div class="status-dot connected" style="animation: pulse 1.5s infinite;"></div>
+                                                                            RUNNING
+                                                                        </span>
+                                                                    <% } else if (cancelledSchedules[slotKey]) { %>
+                                                                        <span class="status-indicator disconnected" style="font-size: 0.75rem; padding: 0.375rem 0.75rem;">
+                                                                            <i data-feather="x-circle" style="width: 12px; height: 12px;"></i>
+                                                                            CANCELLED
+                                                                        </span>
+                                                                    <% } else { %>
+                                                                        <span class="status-indicator unknown" style="font-size: 0.75rem; padding: 0.375rem 0.75rem;">
+                                                                            <i data-feather="clock" style="width: 12px; height: 12px;"></i>
+                                                                            SCHEDULED
+                                                                        </span>
+                                                                    <% } %>
+                                                                </div>
+                                                            <% }); %>
+                                                        <% } %>
+                                                    </td>
+                                                    <td>
+                                                        <% if (weeklySchedule[day] && weeklySchedule[day].length > 0) { %>
+                                                            <% weeklySchedule[day].forEach((slot, index) => { %>
+                                                                <div style="margin-bottom: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">
+                                                                    <button class="btn btn-primary" style="font-size: 0.7rem; padding: 0.25rem 0.5rem;" onclick="triggerSlot('<%= slot.room_id %>', '<%= slot.start_time %>', '<%= slot.end_time %>')">
+                                                                        <i data-feather="play" style="width: 10px; height: 10px; margin-right: 2px;"></i>
+                                                                        Trigger
+                                                                    </button>
+                                                                    <button class="btn btn-warning" style="font-size: 0.7rem; padding: 0.25rem 0.5rem;" onclick="cancelSlot('<%= slot.room_id %>', '<%= slot.start_time %>', '<%= slot.end_time %>')">
+                                                                        <i data-feather="x" style="width: 10px; height: 10px; margin-right: 2px;"></i>
+                                                                        Cancel
+                                                                    </button>
+                                                                </div>
+                                                            <% }); %>
+                                                        <% } %>
+                                                    </td>
+                                                </tr>
+                                            <% }); %>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <% } %>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Room Group Summary -->
+                <% if (Object.keys(roomGroups).length > 0) { %>
+                <div class="card-row">
+                    <div class="card" style="grid-column: span 3;">
+                        <div class="card-header">
+                            <h5 class="card-title">
+                                <i data-feather="grid"></i>
+                                Room Group Status Summary
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+                                <% Object.keys(roomGroups).forEach(roomId => { %>
+                                    <div class="stat-card" style="padding: 1rem;">
+                                        <div class="stat-content">
+                                            <div class="stat-label">Room <%= roomId %></div>
+                                            <div style="font-size: 0.875rem; color: #5a5c69; margin-top: 0.5rem;">
+                                                <div><strong>Total Slots:</strong> <%= roomGroups[roomId].length %></div>
+                                                <div><strong>Running:</strong> 
+                                                    <% let runningCount = 0; %>
+                                                    <% roomGroups[roomId].forEach(slot => { %>
+                                                        <% const slotKey = `${slot.room_id}_${slot.start_time}_${slot.end_time}`; %>
+                                                        <% if (runningJobs[slotKey]) runningCount += 1; %>
+                                                    <% }); %>
+                                                    <span style="color: #1cc88a; font-weight: 600;"><%= runningCount %></span>
+                                                </div>
+                                                <div><strong>Cancelled:</strong> 
+                                                    <% let cancelledCount = 0; %>
+                                                    <% roomGroups[roomId].forEach(slot => { %>
+                                                        <% const slotKey = `${slot.room_id}_${slot.start_time}_${slot.end_time}`; %>
+                                                        <% if (cancelledSchedules[slotKey]) cancelledCount += 1; %>
+                                                    <% }); %>
+                                                    <span style="color: #e74a3b; font-weight: 600;"><%= cancelledCount %></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="stat-icon primary">
+                                            <i data-feather="home"></i>
+                                        </div>
+                                    </div>
+                                <% }); %>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <% } %>
+            </div>
+        </main>
+    </div>
+
+    <!-- Feather Icons Script -->
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script>
+        // Initialize Feather icons
+        feather.replace();
+    </script>
+    <script>
+        // Bridge status monitoring
+        async function updateBridgeStatus() {
+            try {
+                const response = await fetch('/api/bridge-status');
+                const bridgeData = await response.json();
+                
+                const bridge = bridgeData.mosquitto_local_test;
+                const statusCard = document.getElementById('bridgeStatusCard');
+                const statusText = document.getElementById('bridgeStatusText');
+                
+                if (bridge) {
+                    // Update status card with AdminKit colors
+                    if (bridge.connected) {
+                        statusText.innerHTML = 'Connected';
+                        statusCard.classList.remove('info', 'danger');
+                        statusCard.classList.add('success');
+                    } else if (bridge.state === 'disconnected') {
+                        statusText.innerHTML = 'Disconnected';
+                        statusCard.classList.remove('info', 'success');
+                        statusCard.classList.add('danger');
+                    } else {
+                        statusText.innerHTML = bridge.state || 'Unknown';
+                        statusCard.classList.remove('success', 'danger');
+                        statusCard.classList.add('info');
+                    }
+                } else {
+                    statusText.innerHTML = 'No Data';
+                    statusCard.classList.remove('success', 'danger');
+                    statusCard.classList.add('info');
+                }
+                
+            } catch (error) {
+                console.error('Error fetching bridge status:', error);
+                if (statusText) statusText.innerHTML = 'Error';
+                if (statusCard) {
+                    statusCard.classList.remove('success', 'info');
+                    statusCard.classList.add('danger');
+                }
+            }
+        }
+        
+        // Slot management functions
+        async function triggerSlot(roomId, startTime, endTime) {
+            const button = event.target;
+            const originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '⏳ Triggering...';
+            
+            try {
+                const response = await fetch('/api/trigger-slot', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        room_id: roomId,
+                        start_time: startTime,
+                        end_time: endTime,
+                        trigger_type: 'manual'
+                    })
+                });
+                
+                if (response.ok) {
+                    button.innerHTML = '✅ Triggered';
+                    setTimeout(() => window.location.reload(), 2000);
+                } else {
+                    button.innerHTML = '❌ Failed';
+                    setTimeout(() => {
+                        button.innerHTML = originalText;
+                        button.disabled = false;
+                    }, 3000);
+                }
+            } catch (error) {
+                button.innerHTML = '❌ Error';
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }, 3000);
+            }
+        }
+        
+        async function cancelSlot(roomId, startTime, endTime) {
+            const button = event.target;
+            const originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '⏳ Cancelling...';
+            
+            try {
+                const response = await fetch('/api/cancel-slot', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        room_id: roomId,
+                        start_time: startTime,
+                        end_time: endTime,
+                        cancel_type: 'manual'
+                    })
+                });
+                
+                if (response.ok) {
+                    button.innerHTML = '✅ Cancelled';
+                    setTimeout(() => window.location.reload(), 2000);
+                } else {
+                    button.innerHTML = '❌ Failed';
+                    setTimeout(() => {
+                        button.innerHTML = originalText;
+                        button.disabled = false;
+                    }, 3000);
+                }
+            } catch (error) {
+                button.innerHTML = '❌ Error';
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }, 3000);
+            }
+        }
+        
+        // Update bridge status every 5 seconds
+        updateBridgeStatus();
+        setInterval(updateBridgeStatus, 5000);
+    </script>
+</body>
+</html>

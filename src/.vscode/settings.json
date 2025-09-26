@@ -1,0 +1,7 @@
+{
+    "python.analysis.extraPaths": [
+        "/app"   // so Pylance treats the workspace root (where "src/" is) as a module root
+    ],
+    "python.languageServer": "Default",
+
+}
