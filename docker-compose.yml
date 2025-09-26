@@ -1,0 +1,64 @@
+services:
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: dashboard_container
+    ports:
+      - "8080:8080" # web dashboard accessible at http://localhost:8080
+    networks:
+      - default
+      - shared_test_network_mqtt
+#    volumes:
+#      - ./dashboard:/app
+    depends_on:
+      - mosquitto_rpi
+    command: ["node", "dist/index.js"]
+  postgres:
+    image: postgres
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: schedule_db
+    networks:
+      - default
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  mosquitto_rpi:
+    image: eclipse-mosquitto
+    container_name: mosquitto_broker
+    networks:
+      - shared_test_network_mqtt
+      - default
+    ports:
+      - "9001:9001"
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/log:/mosquitto/log
+  app:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+    container_name: app_container
+    networks:
+      - default
+    depends_on:
+      - mosquitto_rpi
+      - postgres
+    environment:
+      ENV_FILE: /app/config/.env
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+    entrypoint: ["python3", "-m", "src.main_v3"]
+volumes:
+  postgres_data:
+    driver: local
+networks:
+    shared_test_network_mqtt:
+        external: true

@@ -8,7 +8,7 @@ __pycache__/
 *.iml
 
 # Environment
-.env
+config/.env
 venv/
 .env.*
 
@@ -20,11 +20,14 @@ venv/
 *.pyd
 *.dll
 *.db
-
+*.log
 # OS junk
 .DS_Store
 Thumbs.db
-py-schedie-priv-key.json
 
 #
 *priv-key*.json
+notes.txt
+*.conf
+.vscode/.*
+tests/

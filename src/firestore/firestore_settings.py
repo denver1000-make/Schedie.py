@@ -1,13 +1,12 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
-import os
 
 # Constants
 SETTINGS_COLLECTION = "settings"
 SETTINGS_DOCUMENT = "system"
 
 
-def init_firestore(service_account_path: str):
+def init_firestore(service_account_path: str) -> firestore.firestore.Client:
     cred = credentials.Certificate(service_account_path)
     firebase_admin.initialize_app(cred)
     return firestore.client()
