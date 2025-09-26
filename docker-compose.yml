@@ -9,11 +9,11 @@ services:
     networks:
       - default
       - shared_test_network_mqtt
-    volumes:
-      - ./dashboard:/app
+#    volumes:
+#      - ./dashboard:/app
     depends_on:
       - mosquitto_rpi
-    command: [ "sleep", "infinity" ]
+    command: ["node", "dist/index.js"]
   postgres:
     image: postgres
     container_name: postgres_db
@@ -55,7 +55,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./config:/app/config
-    entrypoint: ["sleep", "infinity"]
+    entrypoint: ["python3", "-m", "src.main_v3"]
 volumes:
   postgres_data:
     driver: local
