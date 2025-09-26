@@ -1,9 +1,9 @@
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import dataclasses
 import uuid
 from datetime import datetime, time
 import asyncio
 from apscheduler.job import Job
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -18,26 +18,70 @@ class JobPair:
     turn_off_job: Job
 
 
-async def init_scheduler():
-    scheduler = AsyncIOScheduler()
+def init_scheduler():
+    import logging
+    from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
+    from apscheduler.triggers.interval import IntervalTrigger
+    
+    # Configure scheduler with better settings for debugging
+    from apscheduler.executors.pool import ThreadPoolExecutor as APSThreadPoolExecutor
+    from apscheduler.executors.pool import ProcessPoolExecutor as APSProcessPoolExecutor
+    
+    scheduler = BackgroundScheduler(
+        timezone="Asia/Manila",
+        job_defaults={
+            'max_instances': 1,  # Allow multiple instances of same job
+            'misfire_grace_time': None,
+            'coalesce': False
+        },
+        executors= {
+            'default': APSThreadPoolExecutor(20),   # handles I/O-bound jobs
+            'processpool': APSProcessPoolExecutor(4)  # one per core for CPU-heavy jobs
+        }
+    )
+    
+    # Add listener for job events to debug execution
+    def job_listener(event):
+        if hasattr(event, 'exception') and event.exception:
+            print(f"[ERROR] Job {event.job_id} crashed: {event.exception}")
+            import traceback
+            traceback.print_exception(type(event.exception), event.exception, event.exception.__traceback__)
+        else:
+            print(f"[SUCCESS] Job {event.job_id} executed successfully")
+    
+    # Test job to verify scheduler is working
+    def test_heartbeat():
+        print("[HEARTBEAT] Scheduler is active and executing jobs")
+        return True
+    
+    # Listen for job execution events with correct event types
+    scheduler.add_listener(job_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
+    
     scheduler.start()
-    print("Schedule Manager initialized and started")
+    
+    # Add a test heartbeat job every 30 seconds
+    scheduler.add_job(
+        test_heartbeat,
+        trigger=IntervalTrigger(seconds=30),
+        id="scheduler_heartbeat",
+        replace_existing=True
+    )
+    
+    print("Schedule Manager initialized and started with enhanced debugging")
     return scheduler
 
 
 def set_turn_on_job(scheduler: BackgroundScheduler, rm_id: str, cron: CronTrigger, job: Job, start_time, end_time,
                     day_name: str):
     print(f"A turn on job is registered with CRON {cron}")
-    job_name = gen_job_name(job_type=TURN_ON_JOB, start_time=start_time, end_time=end_time, room_id=rm_id,
-                            day_name=day_name)
+    job_name = f"TURN_ON_{rm_id}_{start_time}_{end_time}_{day_name}"
     scheduler.add_job(job, trigger=cron, args=[rm_id, start_time, end_time, day_name], id=job_name)
 
 
 def set_turn_off_job(scheduler: BackgroundScheduler, rm_id: str, cron: CronTrigger, job: Job, start_time, end_time,
                      day_name: str):
     print(f"A turn off job is registered with CRON {cron}")
-    job_name = gen_job_name(job_type=TURN_OFF_JOB, start_time=start_time, end_time=end_time, room_id=rm_id,
-                            day_name=day_name)
+    job_name = f"TURN_OFF_{rm_id}_{start_time}_{end_time}_{day_name}"
     scheduler.add_job(job, trigger=cron, args=[rm_id, start_time, end_time, day_name], id=job_name)
 
 
@@ -128,7 +172,24 @@ def gen_job_name(
 
 
 def parse_time(raw_time):
-    return datetime.strptime(raw_time, "%I:%M%p").time()
+    """
+    Parse time string in either 24-hour format (HH:MM) or 12-hour format (HH:MMAM/PM).
+    
+    Args:
+        raw_time: Time string in format "06:32" or "6:32AM"
+        
+    Returns:
+        datetime.time object
+    """
+    try:
+        # First try 12-hour format (original format)
+        return datetime.strptime(raw_time, "%I:%M%p").time()
+    except ValueError:
+        try:
+            # Try 24-hour format (used by temporary schedules)
+            return datetime.strptime(raw_time, "%H:%M").time()
+        except ValueError:
+            raise ValueError(f"Time '{raw_time}' does not match expected formats: 'HH:MM' or 'HH:MMAM/PM'")
 
 
 def generate_cron_trig(time_arg: time, full_day_name: str) -> str:

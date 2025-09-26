@@ -1,4 +1,19 @@
 services:
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: dashboard_container
+    ports:
+      - "8080:8080" # web dashboard accessible at http://localhost:8080
+    networks:
+      - default
+      - shared_test_network_mqtt
+    volumes:
+      - ./dashboard:/app
+    depends_on:
+      - mosquitto_rpi
+    command: [ "sleep", "infinity" ]
   postgres:
     image: postgres
     container_name: postgres_db

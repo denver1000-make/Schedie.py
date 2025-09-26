@@ -22,3 +22,10 @@ class Cancellation:
     roomId: str = ""
     timeSlot: TimeSlot = field(default_factory=TimeSlot)
     accepted: Optional[bool] = None  # null means pending
+
+@dataclass 
+class SettingsConfiguration:
+    minute_mark_to_warn: int
+    minute_mark_to_skip: int
+    bypass_admin_approval: bool
+    

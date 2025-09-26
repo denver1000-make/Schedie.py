@@ -1,8 +1,7 @@
 
-from datetime import  date, datetime, time, timedelta
+from datetime import  date, datetime, time
 from zoneinfo import ZoneInfo
 
-from src.modelsV2.model import ResolvedScheduleSlot
 
 
 my_tz = ZoneInfo("Asia/Manila")
@@ -33,8 +32,25 @@ def time_to_datetime(time: time, year: int, month: int, day_of_month: int) -> da
 def diff_time_in_sec(t1: datetime, t2: datetime) -> float:
     return (t1 - t2).total_seconds()
 
-def strip_date_of_start_time(resolved_time_slot: ResolvedScheduleSlot) -> date:
-    return resolved_time_slot.start_date_in_schedule.date()
+def strip_date_of_start_time_v2(start_date: datetime) -> date:
+    return start_date.date()
 
 def parse_time(raw_time):
-    return datetime.strptime(raw_time, "%I:%M%p").time()
+    """
+    Parse time string in either 24-hour format (HH:MM) or 12-hour format (HH:MMAM/PM).
+    
+    Args:
+        raw_time: Time string in format "06:32" or "6:32AM"
+        
+    Returns:
+        datetime.time object
+    """
+    try:
+        # First try 12-hour format (original format)
+        return datetime.strptime(raw_time, "%I:%M%p").time()
+    except ValueError:
+        try:
+            # Try 24-hour format (used by temporary schedules)
+            return datetime.strptime(raw_time, "%H:%M").time()
+        except ValueError:
+            raise ValueError(f"Time '{raw_time}' does not match expected formats: 'HH:MM' or 'HH:MMAM/PM'")
