@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MQTT Publisher</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #dc3545; /* Red background */
+            background-image: linear-gradient(135deg, #dc3545 0%, #b02a37 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 90%;
+            backdrop-filter: blur(10px);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            font-weight: 300;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .input-group {
+            margin: 20px 0;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+            font-size: 1.1rem;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            box-sizing: border-box;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+        }
+        
+        .publish-button {
+            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); /* Blue button */
+            color: white;
+            padding: 18px 35px;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin: 25px 0;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 25px rgba(0,123,255,0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .publish-button:hover {
+            background: linear-gradient(135deg, #0056b3 0%, #003d82 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 35px rgba(0,123,255,0.4);
+        }
+        
+        .publish-button:active {
+            transform: translateY(0);
+            box-shadow: 0 5px 15px rgba(0,123,255,0.3);
+        }
+        
+        .publish-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: 500;
+            font-size: 1rem;
+        }
+        
+        .success {
+            background-color: #d1e7dd;
+            color: #0f5132;
+            border: 2px solid #a3cfbb;
+        }
+        
+        .error {
+            background-color: #f8d7da;
+            color: #842029;
+            border: 2px solid #f5c2c7;
+        }
+        
+        .mqtt-info {
+            background: rgba(0,123,255,0.1);
+            border: 2px solid rgba(0,123,255,0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+            text-align: center;
+            color: #004085;
+            font-size: 0.9rem;
+        }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 MQTT Publisher</h1>
+        
+        <div class="mqtt-info">
+            <strong>Connected to:</strong> <%= brokerUrl %>
+        </div>
+        
+        <div class="input-group">
+            <label for="topic">📡 Topic:</label>
+            <input type="text" id="topic" value="test" placeholder="Enter MQTT topic..." />
+        </div>
+        
+        <div class="input-group">
+            <label for="message">💬 Message:</label>
+            <input type="text" id="message" value="Hello from Web UI!" placeholder="Enter your message..." />
+        </div>
+        
+        <button class="publish-button" onclick="publishMessage()">
+            🔴 Publish Message
+        </button>
+        
+        <div id="status"></div>
+    </div>
+
+    <script>
+        async function publishMessage() {
+            const button = document.querySelector('.publish-button');
+            const status = document.getElementById('status');
+            const topic = document.getElementById('topic').value;
+            const message = document.getElementById('message').value;
+            
+            if (!topic.trim() || !message.trim()) {
+                status.innerHTML = '<div class="status error">⚠️ Please fill in both topic and message!</div>';
+                return;
+            }
+            
+            button.disabled = true;
+            button.innerHTML = '⏳ Publishing...';
+            button.classList.add('pulse');
+            status.innerHTML = '';
+            
+            try {
+                const response = await fetch('/publish', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ topic, message })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    status.innerHTML = `<div class="status success">✅ Message published successfully to topic: <strong>${topic}</strong></div>`;
+                } else {
+                    status.innerHTML = `<div class="status error">❌ Error: ${result.error}</div>`;
+                }
+            } catch (error) {
+                status.innerHTML = `<div class="status error">🌐 Network error: ${error.message}</div>`;
+            } finally {
+                button.disabled = false;
+                button.innerHTML = '🔴 Publish Message';
+                button.classList.remove('pulse');
+            }
+        }
+        
+        // Allow Enter key to publish message
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                publishMessage();
+            }
+        });
+    </script>
+</body>
+</html>
