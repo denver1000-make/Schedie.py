@@ -31,3 +31,7 @@ notes.txt
 *.conf
 .vscode/.*
 tests/
+
+node_modules/
+
+*.md
