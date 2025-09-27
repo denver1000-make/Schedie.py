@@ -152,20 +152,21 @@ def schedule_v3_with_immediate_check(
                     timezone=DEVICE_TZ
                 )
             
-            # Create turn_off trigger with 1-minute earlier end time to prevent race conditions
-            # This only affects when the turn_off job runs, not the schedule logic
-            adjusted_end_minutes = parsed_end_time.minute - 1
-            adjusted_end_hour = parsed_end_time.hour
+            # Create turn_off trigger with 1-minute earlier time to prevent race conditions
+            # This ONLY affects when the job runs, NOT the stored schedule data
+            trigger_end_minutes = parsed_end_time.minute - 1
+            trigger_end_hour = parsed_end_time.hour
             
-            if adjusted_end_minutes < 0:
-                adjusted_end_minutes = 59
-                adjusted_end_hour = adjusted_end_hour - 1 if adjusted_end_hour > 0 else 23
+            if trigger_end_minutes < 0:
+                trigger_end_minutes = 59
+                trigger_end_hour = trigger_end_hour - 1 if trigger_end_hour > 0 else 23
             
-            print(f"[RACE_PREVENTION] Turn_off job scheduled 1 minute early: {parsed_end_time.strftime('%H:%M')} -> {adjusted_end_hour:02d}:{adjusted_end_minutes:02d}")
+            print(f"[RACE_PREVENTION] Turn_off trigger scheduled 1 minute early: {parsed_end_time.strftime('%H:%M')} -> {trigger_end_hour:02d}:{trigger_end_minutes:02d}")
+            print(f"                  (Database schedule data remains unchanged: {parsed_end_time.strftime('%H:%M')})")
                 
             turnOffBaseTrigger = CronTrigger(
-                    hour=adjusted_end_hour,
-                    minute=adjusted_end_minutes,
+                    hour=trigger_end_hour,
+                    minute=trigger_end_minutes,
                     day_of_week=scheduler_day,
                     timezone=DEVICE_TZ
                 )
