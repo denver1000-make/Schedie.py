@@ -9,7 +9,7 @@ JOB_TURN_OFF_SUFFIX = "_t_off"
 
 # Schedule timing constants (centralized)
 MINUTE_MARK_TO_WARN = 2  # Minutes before schedule end to send warning
-MINUTE_MARK_TO_SKIP = 2  # Minutes threshold for skipping turn off when next schedule starts soon
+MINUTE_MARK_TO_SKIP = 3  # Minutes threshold for skipping turn off when next schedule starts soon
 
 # Cancellation timing constants
 CANCELLATION_DELAY_THRESHOLD = 2  # Minutes threshold to determine if delayed turn-off is needed
