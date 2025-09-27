@@ -136,18 +136,6 @@ def schedule_v3_with_immediate_check(
             parsed_start_time = parse_time(timeslot.start_time)
             parsed_end_time = parse_time(timeslot.end_time)
             
-            # Reduce permanent schedule end times by 1 minute to prevent race conditions
-            # Subtract 1 minute from end time for permanent schedules
-            end_minutes = parsed_end_time.minute - 1
-            end_hour = parsed_end_time.hour
-            
-            if end_minutes < 0:
-                end_minutes = 59
-                end_hour = end_hour - 1 if end_hour > 0 else 23
-            
-            parsed_end_time = parsed_end_time.replace(hour=end_hour, minute=end_minutes)
-            print(f"[RACE_PREVENTION] Adjusted end time for {timeslot.room_id}: {timeslot.end_time} -> {parsed_end_time.strftime('%H:%M')}")
-            
             # Map day names to APScheduler day names
             day_name_map = {
                 'Monday': 'mon', 'Tuesday': 'tue', 'Wednesday': 'wed',
@@ -155,16 +143,29 @@ def schedule_v3_with_immediate_check(
             }
                 
             scheduler_day = day_name_map.get(timeslot.day_name, timeslot.day_name.lower()[:3])
-                
+            
+            # Create turn_on trigger with normal start time
             turnOnBaseTrigger = CronTrigger(
                     hour=parsed_start_time.hour,
                     minute=parsed_start_time.minute,
                     day_of_week=scheduler_day,
                     timezone=DEVICE_TZ
                 )
+            
+            # Create turn_off trigger with 1-minute earlier end time to prevent race conditions
+            # This only affects when the turn_off job runs, not the schedule logic
+            adjusted_end_minutes = parsed_end_time.minute - 1
+            adjusted_end_hour = parsed_end_time.hour
+            
+            if adjusted_end_minutes < 0:
+                adjusted_end_minutes = 59
+                adjusted_end_hour = adjusted_end_hour - 1 if adjusted_end_hour > 0 else 23
+            
+            print(f"[RACE_PREVENTION] Turn_off job scheduled 1 minute early: {parsed_end_time.strftime('%H:%M')} -> {adjusted_end_hour:02d}:{adjusted_end_minutes:02d}")
+                
             turnOffBaseTrigger = CronTrigger(
-                    hour=parsed_end_time.hour,
-                    minute=parsed_end_time.minute,
+                    hour=adjusted_end_hour,
+                    minute=adjusted_end_minutes,
                     day_of_week=scheduler_day,
                     timezone=DEVICE_TZ
                 )
