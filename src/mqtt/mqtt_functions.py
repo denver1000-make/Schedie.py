@@ -144,7 +144,7 @@ def send_room_shutdown_warning_mqtt(
         )
         
         print(f"[MQTT] Room shutdown warning sent to {topic}: {payload}")
-        log_mqtt_publish(topic, payload, True)
+        log_mqtt_publish(logger, topic, str(payload), True)
         
         return True
         
@@ -451,11 +451,6 @@ def get_next_schedule_in_room_with_details(
         import datetime
         
         today = datetime.date.today()
-        current_end_time = datetime.datetime.combine(
-            today, 
-            datetime.time(current_end_hour, current_end_minute),
-            tzinfo=DEVICE_TZ
-        )
         
         conn = pg_conn_pool.getconn()
         cursor = conn.cursor()
@@ -466,6 +461,9 @@ def get_next_schedule_in_room_with_details(
         current_end_time_seconds = current_end_hour * 60 + current_end_minute
         
         # Check schedules later today in the same room
+        # Convert MINUTE_MARK_TO_SKIP to minutes for range check
+        time_end_min_ranged = current_end_time_seconds + MINUTE_MARK_TO_SKIP
+        
         today_query = """
         SELECT 
             rss.start_hour,
@@ -476,35 +474,19 @@ def get_next_schedule_in_room_with_details(
         FROM resolved_schedule_slots rss
         WHERE rss.room_id = %s 
         AND rss.day_name = %s
-        AND (rss.start_hour * 60 + rss.start_minute) > %s
+        AND (rss.start_hour * 60 + rss.start_minute) >= %s
+        AND (rss.start_hour * 60 + rss.start_minute) <= %s
         ORDER BY (rss.start_hour * 60 + rss.start_minute) ASC
         """
         
-        cursor.execute(today_query, (room_id, day_name, current_end_time_seconds))
+        cursor.execute(today_query, (
+                room_id, 
+                day_name, 
+                current_end_time_seconds,
+                time_end_min_ranged
+            )
+        )
         today_results = cursor.fetchall()
-        
-        # Check schedules tomorrow (next day)
-        tomorrow_day_names = {
-            'Monday': 'Tuesday', 'Tuesday': 'Wednesday', 'Wednesday': 'Thursday',
-            'Thursday': 'Friday', 'Friday': 'Saturday', 'Saturday': 'Sunday', 'Sunday': 'Monday'
-        }
-        tomorrow_day = tomorrow_day_names.get(day_name, 'Monday')
-        
-        tomorrow_query = """
-        SELECT 
-            rss.start_hour,
-            rss.start_minute,
-            rss.timeslot_id,
-            rss.start_date_in_seconds_epoch,
-            CASE WHEN rss.start_date_in_seconds_epoch IS NULL THEN 'permanent' ELSE 'temporary' END as schedule_type
-        FROM resolved_schedule_slots rss
-        WHERE rss.room_id = %s 
-        AND rss.day_name = %s
-        ORDER BY (rss.start_hour * 60 + rss.start_minute) ASC
-        """
-        
-        cursor.execute(tomorrow_query, (room_id, tomorrow_day))
-        tomorrow_results = cursor.fetchall()
         
         # Process all candidates
         candidates = []
@@ -526,25 +508,6 @@ def get_next_schedule_in_room_with_details(
             if minutes_gap > 0:  # Only future schedules
                 candidates.append((minutes_gap, timeslot_id, f"{schedule_type}_today"))
         
-        # Process tomorrow's schedules (only if no good candidates today)
-        if not candidates or min(candidates, key=lambda x: x[0])[0] > 120:  # Only check tomorrow if nothing soon today
-            tomorrow_date = current_date + datetime.timedelta(days=1)
-            
-            for row in tomorrow_results:
-                start_hour, start_minute, timeslot_id, start_epoch, schedule_type = row
-                
-                # For temporary schedules, check if they're for tomorrow
-                if schedule_type == 'temporary' and start_epoch:
-                    temp_date = datetime.datetime.fromtimestamp(float(start_epoch), tz=DEVICE_TZ).date()
-                    if temp_date != tomorrow_date:
-                        continue  # Skip if not for tomorrow
-                
-                start_time_seconds = start_hour * 60 + start_minute
-                minutes_until_midnight = (24 * 60) - current_end_time_seconds
-                minutes_gap = minutes_until_midnight + start_time_seconds
-                
-                candidates.append((minutes_gap, timeslot_id, f"{schedule_type}_tomorrow"))
-        
         if candidates:
             # Sort by time gap and return the nearest
             candidates.sort(key=lambda x: x[0])
@@ -561,7 +524,7 @@ def get_next_schedule_in_room_with_details(
                 execution_date="all"
             )
             
-            return (minutes_gap, timeslot_id, is_cancelled)
+            return (minutes_gap, timeslot_id, is_next_cancelled)
         else:
             print(f"❌ No upcoming schedule found in {room_id}")
             return None
@@ -574,44 +537,6 @@ def get_next_schedule_in_room_with_details(
             cursor.close()
         if conn:
             pg_conn_pool.putconn(conn)
-
-
-def get_next_schedule_in_room(
-    pg_conn_pool: pg_pool.SimpleConnectionPool,
-    room_id: str,
-    current_end_hour: int,
-    current_end_minute: int,
-    day_name: str
-) -> Optional[int]:
-    """
-    Legacy function - find minutes until next schedule in the same room after current schedule ends.
-    Consider using get_next_schedule_in_room_with_details for cancellation-aware logic.
-    
-    Args:
-        pg_conn_pool: Database connection pool
-        room_id: Room ID to check
-        current_end_hour: Current schedule end hour (24-hour format)
-        current_end_minute: Current schedule end minute
-        day_name: Current day name (not used in current implementation)
-        
-    Returns:
-        Minutes until next schedule starts, or None if no schedule found
-    """
-    try:
-        result = get_next_schedule_in_room_with_details(
-            pg_conn_pool, room_id, current_end_hour, current_end_minute, day_name
-        )
-        
-        if result:
-            minutes_gap, _, _ = result  # Ignore timeslot_id and is_cancelled
-            return minutes_gap
-        else:
-            return None
-            
-    except Exception as e:
-        logger.error(f"Error checking next schedule: {e}")
-        return None
-
 
 def check_skip_and_send_warning(
     pg_conn_pool: pg_pool.SimpleConnectionPool,
@@ -745,59 +670,6 @@ def check_skip_and_send_warning(
         except:
             pass
         return False
-
-
-def should_skip_turn_off(
-    pg_conn_pool: pg_pool.SimpleConnectionPool,
-    room_id: str,
-    current_end_hour: int,
-    current_end_minute: int,
-    day_name: str
-) -> bool:
-    """
-    Check if turn_off should be skipped based on nearby schedules and hardcoded settings.
-    (Legacy function - consider using check_skip_and_send_warning instead)
-    
-    Args:
-        pg_conn_pool: Database connection pool
-        room_id: Room ID to check
-        current_end_hour: Current schedule end hour (24-hour format)
-        current_end_minute: Current schedule end minute
-        day_name: Current day name
-        
-    Returns:
-        True if turn_off should be skipped, False if should proceed
-    """
-    try:
-        # Use global hardcoded setting instead of database lookup
-        minute_mark_to_skip = MINUTE_MARK_TO_SKIP
-        logger.debug(f"minute_mark_to_skip setting: {minute_mark_to_skip} minutes (hardcoded)")
-        
-        # Find next schedule in the same room
-        minutes_until_next = get_next_schedule_in_room(
-            pg_conn_pool, room_id, current_end_hour, current_end_minute, day_name
-        )
-        
-        if minutes_until_next is None:
-            logger.debug(f"No upcoming schedule found in {room_id}, proceeding with turn_off")
-            return False
-        
-        # Smart skip decision: skip only if next schedule is close AND not cancelled
-        if minutes_until_next <= minute_mark_to_skip:
-            if is_next_cancelled:
-                logger.info(f"PROCEED_DECISION: Next schedule in {minutes_until_next} min but CANCELLED - proceeding with turn_off")
-                return False
-            else:
-                logger.info(f"SKIP_DECISION: Next schedule in {minutes_until_next} min (<= {minute_mark_to_skip} min threshold) and ACTIVE - skipping turn_off")
-                return True
-        else:
-            logger.info(f"PROCEED_DECISION: Next schedule in {minutes_until_next} min (> {minute_mark_to_skip} min threshold) - proceeding with turn_off")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Error in skip check: {e}, proceeding with turn_off")
-        return False
-
 
 def _check_skip_only(
     pg_conn_pool: pg_pool.SimpleConnectionPool,
