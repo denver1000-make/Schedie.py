@@ -464,6 +464,9 @@ def get_next_schedule_in_room_with_details(
         # Convert MINUTE_MARK_TO_SKIP to minutes for range check
         time_end_min_ranged = current_end_time_seconds + MINUTE_MARK_TO_SKIP
         
+        logger.info(f"{current_end_time_seconds} Lower Bound")
+        logger.info(f"{time_end_min_ranged} Upper Bound")
+        
         today_query = """
         SELECT 
             rss.start_hour,
@@ -505,7 +508,7 @@ def get_next_schedule_in_room_with_details(
             start_time_seconds = start_hour * 60 + start_minute
             minutes_gap = start_time_seconds - current_end_time_seconds
             
-            if minutes_gap > 0:  # Only future schedules
+            if minutes_gap >= 0:  # Include schedules that start exactly when current ends
                 candidates.append((minutes_gap, timeslot_id, f"{schedule_type}_today"))
         
         if candidates:
