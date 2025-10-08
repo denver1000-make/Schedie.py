@@ -3,9 +3,9 @@ import datetime
 from typing import List
 from src.helper.job_proximity_helper import is_time_within_timeslot
 from src.helper.trigger_creation_helper import get_datetime_from_epoch
-from src.constants import DEVICE_TZ, JOB_TURN_ON_SUFFIX, JOB_TURN_OFF_SUFFIX
+from src.constants import DEVICE_TZ, JOB_TURN_ON_SUFFIX, JOB_TURN_OFF_SUFFIX, JobStatus
 from src.modelsV2.model import ResolvedScheduleSlotV2, RunningTurnOnJob
-from src.mqtt.mqtt_functions import turn_off, turn_on
+from src.mqtt.mqtt_functions import turn_off, turn_on, update_timeslot_status
 from src.sql.running_turn_on_job.running_turn_on_job_sql import pg_insert_running_turn_on_job
 from src.schedulerv2.scheduler_v2 import gen_job_name, parse_time
 from src.utils.time_utils.time_utils import strip_date_of_start_time_v2
@@ -33,27 +33,19 @@ def turn_on_with_tracking(
         
     timeslot_id = job_turn_on_id[:-len(JOB_TURN_ON_SUFFIX)]  # Remove suffix
     
-    # Check if schedule was cancelled
-    from src.sql.cancelled_schedules.cancelled_schedules_sql import pg_is_schedule_cancelled, pg_remove_cancelled_schedule
+    # Core control mechanism: Check if there's a valid running job before proceeding
+    from src.sql.running_turn_on_job.running_turn_on_job_sql import pg_get_running_job_with_schedule_slot
     
-    isCancelled = pg_is_schedule_cancelled(
-        conn_pool=pg_pool,
-        timeslot_id=timeslot_id,
-        execution_date="all"
-    )
-    
-    if isCancelled:
-        # Remove cancellation record but DO NOT turn on or log job
-        pg_remove_cancelled_schedule(
-            timeslot_id=timeslot_id,
-            cancelled_date="",
-            conn_pool=pg_pool
-        )
-        print(f"[CANCELLED] Turn on skipped for Room {room_id} - schedule was cancelled")
+    try:
+        running_job, schedule_slot = pg_get_running_job_with_schedule_slot(pg_pool, timeslot_id)
+        if not running_job:
+            print(f"[NO_RUNNING_JOB] Turn on skipped for Room {room_id} - no running job found (likely cancelled)")
+            return
+        else:
+            print(f"[RUNNING_JOB_FOUND] Turn on proceeding for Room {room_id} - running job exists")
+    except Exception as e:
+        print(f"[ERROR] Failed to check running job for {timeslot_id}: {e}")
         return
-    
-    # Only proceed if not cancelled
-    print(f"[PROCEEDING] Turn on proceeding for Room {room_id} - no cancellation found")
     
     # Call the original turn_on function
     turn_on(room_id, job_turn_off_id, job_turn_on_id, mqtt_client, pg_pool)
@@ -202,7 +194,23 @@ def schedule_v3_with_immediate_check(
                     mqtt_client=mqtt_client,
                     pg_pool=pg_conn_pool
                 )
-
+                
+                update_timeslot_status(
+                    mqtt_client=mqtt_client,
+                    status=JobStatus.JOB_ONGOING,
+                    subject=timeslot.subject,
+                    is_temp=isTemp,
+                    timeslot_id=timeslot.timeslot_id
+                )
+                
+        update_timeslot_status(
+            mqtt_client=mqtt_client,
+            status=JobStatus.JOB_STANDBY,
+            subject=timeslot.subject,
+            is_temp=isTemp,
+            timeslot_id=timeslot.timeslot_id
+        )
+        
         scheduler_v2.add_job(turn_on_with_tracking, trigger=turnOnBaseTrigger, 
                             id=turn_on_name, args=[
             timeslot.room_id,

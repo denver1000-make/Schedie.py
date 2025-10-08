@@ -786,6 +786,7 @@ def main():
                 mqtt_client=client,
                 scheduler=scheduler_v2,  # Pass the scheduler for delayed operations
                 reason=reason,
+                subject="",
                 cancelled_by=cancelled_by
             )
             

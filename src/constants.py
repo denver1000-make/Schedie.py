@@ -18,3 +18,11 @@ CANCELLATION_DELAY_DURATION = 2 # Minutes to delay turn-off after cancellation w
 # Job status constants  
 JOB_ONGOING = 1
 JOB_STANDBY = 0
+JOB_CANCELLED = 2
+JOB_REMOVE = -1
+
+class JobStatus:
+    JOB_ONGOING = 1
+    JOB_STANDBY = 0
+    JOB_CANCELLED = 2
+    JOB_REMOVE = -1
