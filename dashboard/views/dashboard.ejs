@@ -94,6 +94,89 @@
             stroke-width: 2;
         }
         
+        /* Sidebar sections */
+        .nav-section {
+            margin: 1rem 0;
+        }
+        
+        .nav-section-title {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 1.5rem;
+            color: rgba(255,255,255,0.6);
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+        
+        .nav-section-title i {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+        }
+        
+        .schedule-item {
+            cursor: pointer;
+            position: relative;
+            justify-content: space-between;
+            transition: all 0.2s ease;
+        }
+        
+        .schedule-item:hover {
+            background: rgba(255,255,255,0.05);
+            transform: translateX(4px);
+        }
+        
+        .schedule-item.active {
+            background: rgba(255,255,255,0.15);
+            border-left: 3px solid #fff;
+        }
+        
+        .schedule-count {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 12px;
+            min-width: 20px;
+            text-align: center;
+            font-weight: 600;
+        }
+        
+        .schedule-count.permanent {
+            background: rgba(78, 115, 223, 0.8);
+        }
+        
+        .schedule-count.temporary {
+            background: rgba(246, 194, 62, 0.8);
+        }
+        
+        .schedule-count.running {
+            background: rgba(28, 200, 138, 0.8);
+            animation: pulse 2s infinite;
+        }
+        
+        .schedule-count.cancelled {
+            background: rgba(231, 74, 59, 0.8);
+        }
+        
+        .room-item {
+            cursor: pointer;
+            font-size: 0.85rem;
+            padding: 0.5rem 1.5rem 0.5rem 2.5rem;
+        }
+        
+        .room-item:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        
+        .room-item.active {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+        
         /* Main content */
         .main {
             flex: 1;
@@ -519,34 +602,73 @@
             
             <div class="sidebar-nav">
                 <div class="nav-item">
-                    <a class="nav-link active" href="/">
-                        <i data-feather="sliders"></i>
+                    <a class="nav-link active" href="/" id="dashboard-link">
+                        <i data-feather="home"></i>
                         <span>Dashboard</span>
                     </a>
                 </div>
-                <div class="nav-item">
-                    <a class="nav-link" href="#schedules">
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">
                         <i data-feather="calendar"></i>
                         <span>Schedules</span>
-                    </a>
+                    </div>
+                    
+                    <div class="nav-item" id="schedule-nav-items">
+                        <div class="nav-link schedule-item" data-filter="all">
+                            <i data-feather="grid"></i>
+                            <span>All Schedules</span>
+                            <span class="schedule-count" id="all-count">0</span>
+                        </div>
+                        
+                        <div class="nav-link schedule-item" data-filter="permanent">
+                            <i data-feather="anchor"></i>
+                            <span>Permanent</span>
+                            <span class="schedule-count permanent" id="permanent-count">0</span>
+                        </div>
+                        
+                        <div class="nav-link schedule-item" data-filter="temporary">
+                            <i data-feather="clock"></i>
+                            <span>Temporary</span>
+                            <span class="schedule-count temporary" id="temporary-count">0</span>
+                        </div>
+                        
+                        <div class="nav-link schedule-item" data-filter="running">
+                            <i data-feather="activity"></i>
+                            <span>Running</span>
+                            <span class="schedule-count running" id="running-count">0</span>
+                        </div>
+                        
+                        <div class="nav-link schedule-item" data-filter="cancelled">
+                            <i data-feather="x-circle"></i>
+                            <span>Cancelled</span>
+                            <span class="schedule-count cancelled" id="cancelled-count">0</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="nav-item">
-                    <a class="nav-link" href="#bridge">
-                        <i data-feather="activity"></i>
-                        <span>MQTT Bridge</span>
-                    </a>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">
+                        <i data-feather="map-pin"></i>
+                        <span>Rooms</span>
+                    </div>
+                    <div class="nav-item" id="room-nav-items">
+                        <!-- Room items will be populated dynamically -->
+                    </div>
                 </div>
-                <div class="nav-item">
-                    <a class="nav-link" href="#analytics">
-                        <i data-feather="bar-chart-2"></i>
-                        <span>Analytics</span>
-                    </a>
-                </div>
-                <div class="nav-item">
-                    <a class="nav-link" href="#settings">
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">
                         <i data-feather="settings"></i>
-                        <span>Settings</span>
-                    </a>
+                        <span>Debug</span>
+                    </div>
+                    
+                    <div class="nav-item">
+                        <a class="nav-link" href="/debug/mqtt" id="mqtt-debug-link">
+                            <i data-feather="activity"></i>
+                            <span>MQTT Messages</span>
+                        </a>
+                    </div>
                 </div>
             </div>
         </nav>
@@ -850,9 +972,94 @@
                 // Update statistics if needed
                 updateStatistics(data);
                 
+                // Update sidebar counts
+                updateSidebarCounts(data);
+                
+                // Update room list
+                updateRoomList(data.weeklySchedule);
+                
             } catch (error) {
                 console.error('Error refreshing schedule status:', error);
             }
+        }
+
+        // Update sidebar schedule counts
+        function updateSidebarCounts(data) {
+            const weeklySchedule = data.weeklySchedule || {};
+            const runningJobs = data.runningJobs || {};
+            const cancelledSchedules = data.cancelledSchedules || {};
+            
+            let totalSlots = 0;
+            let permanentSlots = 0;
+            let temporarySlots = 0;
+            let runningCount = 0;
+            let cancelledCount = 0;
+            
+            // Count all slots
+            Object.values(weeklySchedule).forEach(daySchedules => {
+                if (Array.isArray(daySchedules)) {
+                    daySchedules.forEach(slot => {
+                        totalSlots++;
+                        if (slot.is_temporary) {
+                            temporarySlots++;
+                        } else {
+                            permanentSlots++;
+                        }
+                        
+                        if (slot.timeslot_id) {
+                            if (runningJobs[slot.timeslot_id]) {
+                                runningCount++;
+                            }
+                            if (cancelledSchedules[slot.timeslot_id]) {
+                                cancelledCount++;
+                            }
+                        }
+                    });
+                }
+            });
+            
+            // Update counts in sidebar
+            document.getElementById('all-count').textContent = totalSlots;
+            document.getElementById('permanent-count').textContent = permanentSlots;
+            document.getElementById('temporary-count').textContent = temporarySlots;
+            document.getElementById('running-count').textContent = runningCount;
+            document.getElementById('cancelled-count').textContent = cancelledCount;
+        }
+
+        // Update room list in sidebar
+        function updateRoomList(weeklySchedule) {
+            const roomContainer = document.getElementById('room-nav-items');
+            const rooms = new Set();
+            
+            // Collect all rooms
+            Object.values(weeklySchedule || {}).forEach(daySchedules => {
+                if (Array.isArray(daySchedules)) {
+                    daySchedules.forEach(slot => {
+                        if (slot.room_id) {
+                            rooms.add(slot.room_id);
+                        }
+                    });
+                }
+            });
+            
+            // Clear existing room items
+            roomContainer.innerHTML = '';
+            
+            // Add room items
+            Array.from(rooms).sort().forEach(roomId => {
+                const roomItem = document.createElement('div');
+                roomItem.className = 'nav-link room-item';
+                roomItem.setAttribute('data-room', roomId);
+                roomItem.innerHTML = `
+                    <i data-feather="home" style="width: 16px; height: 16px; margin-right: 8px;"></i>
+                    <span>Room ${roomId}</span>
+                `;
+                roomItem.addEventListener('click', () => filterByRoom(roomId));
+                roomContainer.appendChild(roomItem);
+            });
+            
+            // Re-apply feather icons
+            feather.replace();
         }
 
         // Update status indicators without full page reload
@@ -928,9 +1135,101 @@
             });
         }
 
+        // Schedule filtering functionality
+        let currentFilter = 'all';
+        let currentRoom = null;
+
+        function applyFilters() {
+            const allRows = document.querySelectorAll('tbody tr');
+            
+            allRows.forEach(row => {
+                const scheduleSlots = row.querySelectorAll('.schedule-slot');
+                let showRow = false;
+                
+                scheduleSlots.forEach(slot => {
+                    let showSlot = true;
+                    
+                    // Apply schedule type filter
+                    if (currentFilter !== 'all') {
+                        if (currentFilter === 'permanent' && slot.classList.contains('temporary')) {
+                            showSlot = false;
+                        } else if (currentFilter === 'temporary' && !slot.classList.contains('temporary')) {
+                            showSlot = false;
+                        } else if (currentFilter === 'running') {
+                            const statusRow = row.querySelector('.status-indicator.connected');
+                            if (!statusRow) showSlot = false;
+                        } else if (currentFilter === 'cancelled') {
+                            const statusRow = row.querySelector('.status-indicator.disconnected');
+                            if (!statusRow) showSlot = false;
+                        }
+                    }
+                    
+                    // Apply room filter
+                    if (currentRoom) {
+                        const roomText = slot.querySelector('.schedule-room');
+                        if (!roomText || !roomText.textContent.includes(currentRoom)) {
+                            showSlot = false;
+                        }
+                    }
+                    
+                    // Show/hide slot
+                    slot.style.display = showSlot ? 'block' : 'none';
+                    if (showSlot) showRow = true;
+                });
+                
+                // Show/hide entire row
+                row.style.display = showRow ? 'table-row' : 'none';
+            });
+        }
+
+        function filterByScheduleType(filterType) {
+            currentFilter = filterType;
+            
+            // Update active state in sidebar
+            document.querySelectorAll('.schedule-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            document.querySelector(`[data-filter="${filterType}"]`).classList.add('active');
+            
+            applyFilters();
+        }
+
+        function filterByRoom(roomId) {
+            currentRoom = currentRoom === roomId ? null : roomId;
+            
+            // Update active state in sidebar
+            document.querySelectorAll('.room-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            if (currentRoom) {
+                document.querySelector(`[data-room="${roomId}"]`).classList.add('active');
+            }
+            
+            applyFilters();
+        }
+
+        // Initialize sidebar interactions
+        function initializeSidebar() {
+            // Schedule filter clicks
+            document.querySelectorAll('.schedule-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const filter = item.getAttribute('data-filter');
+                    filterByScheduleType(filter);
+                });
+            });
+            
+            // Set default active filter
+            document.querySelector('[data-filter="all"]').classList.add('active');
+        }
+
         // Apply enhancements after page load
         document.addEventListener('DOMContentLoaded', function() {
             enhanceStatusIndicators();
+            initializeSidebar();
+            
+            // Initial data load
+            refreshScheduleStatus();
         });
     </script>
 </body>

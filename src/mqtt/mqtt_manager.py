@@ -21,7 +21,9 @@ COLLECT_SCHEDULE = "collect_schedule"
 SET_MINUTE_TO_WARN = "set_minute_to_warn"
 SET_MINUTE_GAP = "set_minute_gap"
 SET_SETTINGS = "set_settings"
+SET_ROOM_STATUS = "set_room_status"
 HEARTBEAT = "heartbeat"
+SCHEDULE_SHUTDOWN_WARNING = "room_shutdown_warning"
 
 # Subscription topic patterns (with wildcards for subscribing)
 SYSTEM_SETTINGS_UPDATE_PATTERN = f"{SYSTEM_SETTINGS_UPDATE_BASE}/#"
@@ -136,7 +138,7 @@ def publish(topic: str, msg, log: bool = True):
     if mqtt_client:
         mqtt_client.publish(topic=topic, payload=msg, qos=2)
 
-def publish_v2(client: mqtt.Client, topic: str, msg, log: bool = True):
+def publish_v2(client: mqtt.Client, topic: str, msg, log: bool = True, retain: bool = False):
     if log:
         print(f"[MQTT] Publishing to topic '{topic}': {msg}")
-    client.publish(topic=topic, payload=msg, qos=2)
+    client.publish(topic=topic, payload=msg, qos=2, retain=retain)

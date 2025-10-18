@@ -19,7 +19,6 @@ class JobPair:
 
 
 def init_scheduler():
-    import logging
     from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
     from apscheduler.triggers.interval import IntervalTrigger
     
@@ -48,24 +47,12 @@ def init_scheduler():
             traceback.print_exception(type(event.exception), event.exception, event.exception.__traceback__)
         else:
             print(f"[SUCCESS] Job {event.job_id} executed successfully")
-    
-    # Test job to verify scheduler is working
-    def test_heartbeat():
-        print("[HEARTBEAT] Scheduler is active and executing jobs")
-        return True
-    
+ 
     # Listen for job execution events with correct event types
     scheduler.add_listener(job_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
     
     scheduler.start()
     
-    # Add a test heartbeat job every 30 seconds
-    scheduler.add_job(
-        test_heartbeat,
-        trigger=IntervalTrigger(seconds=30),
-        id="scheduler_heartbeat",
-        replace_existing=True
-    )
     
     print("Schedule Manager initialized and started with enhanced debugging")
     return scheduler

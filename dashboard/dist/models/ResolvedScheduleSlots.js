@@ -77,14 +77,15 @@ class ResolvedScheduleSlotsModel {
         return __awaiter(this, void 0, void 0, function* () {
             const query = `
             INSERT INTO ${this.tableName} (
-                schedule_id, room_id, day_name, day_order, start_time, end_time,
-                subject, teacher, teacher_email, time_start_in_seconds,
-                start_date_in_seconds_epoch, end_date_in_seconds_epoch
+                timeslot_id, schedule_id, room_id, day_name, day_order, start_time, end_time,
+                subject, teacher, teacher_email, start_hour, start_minute, end_hour, end_minute,
+                time_start_in_seconds, start_date_in_seconds_epoch, end_date_in_seconds_epoch, is_temporary
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             RETURNING *
         `;
             const values = [
+                data.timeslot_id,
                 data.schedule_id,
                 data.room_id,
                 data.day_name,
@@ -94,9 +95,14 @@ class ResolvedScheduleSlotsModel {
                 data.subject,
                 data.teacher,
                 data.teacher_email,
+                data.start_hour,
+                data.start_minute,
+                data.end_hour,
+                data.end_minute,
                 data.time_start_in_seconds,
                 data.start_date_in_seconds_epoch,
-                data.end_date_in_seconds_epoch
+                data.end_date_in_seconds_epoch,
+                data.is_temporary
             ];
             const result = yield client.query(query, values);
             return result.rows[0];
@@ -361,30 +367,27 @@ class ResolvedScheduleSlotsModel {
     }
 }
 exports.ResolvedScheduleSlotsModel = ResolvedScheduleSlotsModel;
-ResolvedScheduleSlotsModel.tableName = 'resolved_schedule_slots';
+ResolvedScheduleSlotsModel.tableName = 'resolved_schedule_slots_v2';
 ResolvedScheduleSlotsModel.createTableQuery = `
-        CREATE TABLE IF NOT EXISTS public.resolved_schedule_slots
-        (
-            id integer NOT NULL DEFAULT nextval('resolved_schedule_slots_id_seq'::regclass),
-            timeslot_id character varying(255) COLLATE pg_catalog."default" NOT NULL,
-            schedule_id character varying(255) COLLATE pg_catalog."default" NOT NULL,
-            room_id character varying(100) COLLATE pg_catalog."default" NOT NULL,
-            day_name character varying(20) COLLATE pg_catalog."default" NOT NULL,
+        CREATE TABLE IF NOT EXISTS public.resolved_schedule_slots_v2 (
+            timeslot_id character varying NOT NULL,
+            schedule_id character varying NOT NULL,
+            room_id character varying NOT NULL,
+            day_name character varying NOT NULL,
             day_order integer NOT NULL,
-            start_time character varying(20) COLLATE pg_catalog."default" NOT NULL,
-            end_time character varying(20) COLLATE pg_catalog."default" NOT NULL,
-            subject character varying(200) COLLATE pg_catalog."default",
-            teacher character varying(200) COLLATE pg_catalog."default",
-            teacher_email character varying(255) COLLATE pg_catalog."default",
-            start_hour integer NOT NULL DEFAULT 0,
-            start_minute integer NOT NULL DEFAULT 0,
-            end_hour integer NOT NULL DEFAULT 0,
-            end_minute integer NOT NULL DEFAULT 0,
+            start_time character varying NOT NULL,
+            end_time character varying NOT NULL,
+            subject character varying NOT NULL,
+            teacher character varying NOT NULL,
+            teacher_email character varying,
+            start_hour integer NOT NULL,
+            start_minute integer NOT NULL,
+            end_hour integer NOT NULL,
+            end_minute integer NOT NULL,
             time_start_in_seconds integer,
-            start_date_in_seconds_epoch bigint,
-            end_date_in_seconds_epoch bigint,
-            is_temporary boolean DEFAULT false,
-            created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-            CONSTRAINT resolved_schedule_slots_pkey PRIMARY KEY (id)
+            start_date_in_seconds_epoch double precision,
+            end_date_in_seconds_epoch double precision,
+            is_temporary boolean NOT NULL,
+            CONSTRAINT resolved_schedule_slots_v2_pkey PRIMARY KEY (timeslot_id)
         );
     `;

@@ -59,8 +59,8 @@ class CancelledSchedulesModel {
     static create(client, data) {
         return __awaiter(this, void 0, void 0, function* () {
             const query = `
-            INSERT INTO ${this.tableName} (timeslot_id, cancellation_type, cancelled_date, reason, cancelled_by)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO ${this.tableName} (timeslot_id, cancellation_type, cancelled_date, reason, cancelled_by, cancellation_id, room_id, teacher_name, teacher_id, teacher_email, day_name, year, month, day_of_month, subject, start_time, end_time)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             RETURNING *
         `;
             const values = [
@@ -68,16 +68,28 @@ class CancelledSchedulesModel {
                 data.cancellation_type,
                 data.cancelled_date,
                 data.reason,
-                data.cancelled_by
+                data.cancelled_by,
+                data.cancellation_id,
+                data.room_id,
+                data.teacher_name,
+                data.teacher_id,
+                data.teacher_email,
+                data.day_name,
+                data.year,
+                data.month,
+                data.day_of_month,
+                data.subject,
+                data.start_time,
+                data.end_time
             ];
             const result = yield client.query(query, values);
             return result.rows[0];
         });
     }
-    static delete(client, id) {
+    static delete(client, timeslotId) {
         return __awaiter(this, void 0, void 0, function* () {
-            const query = `DELETE FROM ${this.tableName} WHERE id = $1`;
-            const result = yield client.query(query, [id]);
+            const query = `DELETE FROM ${this.tableName} WHERE timeslot_id = $1`;
+            const result = yield client.query(query, [timeslotId]);
             return result.rowCount > 0;
         });
     }

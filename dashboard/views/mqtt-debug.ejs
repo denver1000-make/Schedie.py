@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MQTT Debug - SchedulerDashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f8f9fa;
+            color: #212529;
+            line-height: 1.6;
+        }
+        
+        .wrapper {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: #233362;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        
+        .sidebar-brand {
+            padding: 1.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            font-size: 1.25rem;
+            font-weight: 600;
+            text-decoration: none;
+            color: white;
+        }
+        
+        .sidebar-brand .brand-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            font-size: 20px;
+        }
+        
+        .sidebar-nav {
+            flex: 1;
+            padding: 1rem 0;
+        }
+        
+        .nav-item {
+            margin: 0.25rem 0;
+        }
+        
+        .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1.5rem;
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            transition: all 0.2s ease;
+            border-radius: 0;
+            margin: 0 1rem;
+            border-radius: 8px;
+        }
+        
+        .nav-link:hover,
+        .nav-link.active {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .nav-link i {
+            width: 20px;
+            height: 20px;
+            margin-right: 12px;
+            stroke-width: 2;
+        }
+        
+        /* Main content */
+        .main {
+            flex: 1;
+            margin-left: 280px;
+            background: #f8f9fa;
+        }
+        
+        .topbar {
+            background: white;
+            border-bottom: 1px solid #e3e6f0;
+            padding: 1rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .topbar-title {
+            font-size: 1.75rem;
+            font-weight: 400;
+            color: #5a5c69;
+            margin: 0;
+        }
+        
+        .content {
+            padding: 1.5rem;
+        }
+        
+        /* Cards */
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+            border: 1px solid #e3e6f0;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            margin-bottom: 1.5rem;
+        }
+        
+        .card-header {
+            padding: 1rem 1.5rem;
+            background: #f8f9fc;
+            border-bottom: 1px solid #e3e6f0;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #5a5c69;
+            margin: 0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .card-title i {
+            margin-right: 8px;
+            width: 16px;
+            height: 16px;
+        }
+        
+        .card-body {
+            padding: 1.5rem;
+            flex: 1;
+        }
+        
+        /* Controls */
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            align-items: center;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            line-height: 1.5;
+            text-align: center;
+            vertical-align: middle;
+            cursor: pointer;
+            user-select: none;
+            border: 1px solid transparent;
+            border-radius: 0.35rem;
+            transition: all 0.15s ease-in-out;
+            text-decoration: none;
+        }
+        
+        .btn-primary {
+            color: white;
+            background: #4e73df;
+            border-color: #4e73df;
+        }
+        
+        .btn-primary:hover {
+            background: #2e59d9;
+            border-color: #2653d4;
+        }
+        
+        .btn-sm {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.75rem;
+        }
+        
+        .form-select {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            color: #495057;
+            background: white;
+            border: 1px solid #ced4da;
+            border-radius: 0.35rem;
+        }
+        
+        /* Messages */
+        .message-list {
+            max-height: 600px;
+            overflow-y: auto;
+            border: 1px solid #e3e6f0;
+            border-radius: 0.35rem;
+        }
+        
+        .message-item {
+            padding: 0.75rem;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 0.875rem;
+        }
+        
+        .message-item:last-child {
+            border-bottom: none;
+        }
+        
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        
+        .message-topic {
+            font-weight: 600;
+            color: #4e73df;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .message-timestamp {
+            color: #858796;
+            font-size: 0.75rem;
+        }
+        
+        .message-type {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            font-size: 0.65rem;
+            font-weight: 700;
+            border-radius: 0.35rem;
+            text-transform: uppercase;
+        }
+        
+        .message-type.connection {
+            background: #4e73df;
+            color: white;
+        }
+        
+        .message-type.log {
+            background: #f6c23e;
+            color: #8a6914;
+        }
+        
+        .message-type.clients {
+            background: #1cc88a;
+            color: white;
+        }
+        
+        .message-type.other {
+            background: #858796;
+            color: white;
+        }
+        
+        .message-content {
+            background: #f8f9fc;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+            word-break: break-all;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+            border-left: 4px solid #4e73df;
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+        }
+        
+        .stat-card.connection { border-left-color: #4e73df; }
+        .stat-card.log { border-left-color: #f6c23e; }
+        .stat-card.clients { border-left-color: #1cc88a; }
+        .stat-card.other { border-left-color: #858796; }
+        
+        .stat-content {
+            flex: 1;
+        }
+        
+        .stat-label {
+            color: #5a5c69;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 0.25rem;
+        }
+        
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #5a5c69;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <a class="sidebar-brand" href="/">
+                <div class="brand-icon">
+                    📊
+                </div>
+                <span>SchedulerDashboard</span>
+            </a>
+            
+            <div class="sidebar-nav">
+                <div class="nav-item">
+                    <a class="nav-link" href="/">
+                        <i data-feather="home"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </div>
+                
+                <div class="nav-item">
+                    <a class="nav-link active" href="/debug/mqtt">
+                        <i data-feather="activity"></i>
+                        <span>MQTT Debug</span>
+                    </a>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Main content -->
+        <main class="main">
+            <div class="topbar">
+                <h1 class="topbar-title">MQTT Debug Messages</h1>
+            </div>
+            
+            <div class="content">
+                <!-- Statistics -->
+                <div class="stats" id="stats-container">
+                    <!-- Stats will be populated dynamically -->
+                </div>
+                
+                <!-- Controls -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title">
+                            <i data-feather="filter"></i>
+                            Message Filter
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="controls">
+                            <select class="form-select" id="messageTypeFilter">
+                                <option value="all">All Messages</option>
+                                <option value="connection">Connection Messages</option>
+                                <option value="log">Log Messages</option>
+                                <option value="clients">Client Messages</option>
+                                <option value="other">Other Messages</option>
+                            </select>
+                            
+                            <select class="form-select" id="messageLimitFilter">
+                                <option value="25">25 Messages</option>
+                                <option value="50" selected>50 Messages</option>
+                                <option value="100">100 Messages</option>
+                            </select>
+                            
+                            <button class="btn btn-primary btn-sm" onclick="refreshMessages()">
+                                <i data-feather="refresh-cw" style="width: 14px; height: 14px; margin-right: 4px;"></i>
+                                Refresh
+                            </button>
+                            
+                            <button class="btn btn-primary btn-sm" onclick="clearMessages()">
+                                <i data-feather="trash-2" style="width: 14px; height: 14px; margin-right: 4px;"></i>
+                                Clear
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Messages -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title">
+                            <i data-feather="message-square"></i>
+                            MQTT Messages
+                        </h5>
+                        <span id="message-count" class="badge" style="background: #1cc88a; color: white; padding: 0.5rem 1rem; border-radius: 0.35rem; font-size: 0.75rem;">
+                            0 messages
+                        </span>
+                    </div>
+                    <div class="card-body" style="padding: 0;">
+                        <div class="message-list" id="message-list">
+                            <div style="text-align: center; padding: 2rem; color: #858796;">
+                                Loading messages...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Feather Icons Script -->
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script>
+        // Initialize Feather icons
+        feather.replace();
+        
+        let currentFilter = 'all';
+        let currentLimit = 50;
+        
+        // Load messages from API
+        async function loadMessages() {
+            try {
+                const response = await fetch(`/api/mqtt-debug?type=${currentFilter}&limit=${currentLimit}`);
+                const data = await response.json();
+                
+                displayMessages(data.messages);
+                updateStats(data);
+                
+                document.getElementById('message-count').textContent = `${data.messages.length} of ${data.totalCount} messages`;
+                
+            } catch (error) {
+                console.error('Error loading messages:', error);
+                document.getElementById('message-list').innerHTML = 
+                    '<div style="text-align: center; padding: 2rem; color: #e74a3b;">Error loading messages</div>';
+            }
+        }
+        
+        // Display messages in the list
+        function displayMessages(messages) {
+            const messageList = document.getElementById('message-list');
+            
+            if (messages.length === 0) {
+                messageList.innerHTML = '<div style="text-align: center; padding: 2rem; color: #858796;">No messages found</div>';
+                return;
+            }
+            
+            const messagesHtml = messages.map(msg => `
+                <div class="message-item">
+                    <div class="message-header">
+                        <div>
+                            <span class="message-type ${msg.messageType}">${msg.messageType}</span>
+                            <span class="message-topic">${msg.topic}</span>
+                        </div>
+                        <span class="message-timestamp">${new Date(msg.timestamp).toLocaleString()}</span>
+                    </div>
+                    <div class="message-content">${msg.message}</div>
+                </div>
+            `).join('');
+            
+            messageList.innerHTML = messagesHtml;
+        }
+        
+        // Update statistics
+        function updateStats(data) {
+            const stats = {};
+            data.messages.forEach(msg => {
+                stats[msg.messageType] = (stats[msg.messageType] || 0) + 1;
+            });
+            
+            const statsContainer = document.getElementById('stats-container');
+            const statsHtml = Object.entries(stats).map(([type, count]) => `
+                <div class="stat-card ${type}">
+                    <div class="stat-content">
+                        <div class="stat-label">${type} Messages</div>
+                        <div class="stat-number">${count}</div>
+                    </div>
+                </div>
+            `).join('');
+            
+            statsContainer.innerHTML = statsHtml;
+        }
+        
+        // Refresh messages
+        function refreshMessages() {
+            const typeFilter = document.getElementById('messageTypeFilter').value;
+            const limitFilter = parseInt(document.getElementById('messageLimitFilter').value);
+            
+            currentFilter = typeFilter;
+            currentLimit = limitFilter;
+            
+            loadMessages();
+        }
+        
+        // Clear messages (this would need a server endpoint)
+        function clearMessages() {
+            if (confirm('Are you sure you want to clear all MQTT debug messages?')) {
+                // This would need a server endpoint to clear messages
+                alert('Clear functionality would need to be implemented on the server');
+            }
+        }
+        
+        // Auto-refresh every 5 seconds
+        setInterval(loadMessages, 5000);
+        
+        // Event listeners
+        document.getElementById('messageTypeFilter').addEventListener('change', refreshMessages);
+        document.getElementById('messageLimitFilter').addEventListener('change', refreshMessages);
+        
+        // Initial load
+        loadMessages();
+    </script>
+</body>
+</html>

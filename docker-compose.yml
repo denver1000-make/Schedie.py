@@ -9,11 +9,12 @@ services:
     networks:
       - default
       - shared_test_network_mqtt
-#    volumes:
-#      - ./dashboard:/app
+    volumes:
+      - ./dashboard:/app
     depends_on:
       - mosquitto_rpi
-    command: ["node", "dist/index.js"]
+    command: ["sleep", "infinity"]
+#    command: ["node", "dist/index.js"]
   postgres:
     image: postgres
     container_name: postgres_db

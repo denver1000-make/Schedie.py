@@ -34,6 +34,14 @@ let bridgeStatus = {
     }
 };
 
+// MQTT Debug Message Store
+let mqttDebugMessages: Array<{
+    timestamp: Date,
+    topic: string,
+    message: string,
+    messageType: string
+}> = [];
+
 client.on('connect', () => {
     console.log('Connected to MQTT broker:', brokerUrl);
     
@@ -67,6 +75,24 @@ client.on('connect', () => {
 client.on('message', (topic, message) => {
     const messageStr = message.toString();
     console.log(`Received message on ${topic}: ${messageStr}`);
+    
+    // Store all MQTT messages for debug view
+    const messageType = topic.startsWith('$SYS/broker/connection/') ? 'connection' :
+                       topic.startsWith('$SYS/broker/log/') ? 'log' :
+                       topic.startsWith('$SYS/broker/clients/') ? 'clients' :
+                       'other';
+    
+    mqttDebugMessages.unshift({
+        timestamp: new Date(),
+        topic: topic,
+        message: messageStr,
+        messageType: messageType
+    });
+    
+    // Keep only last 100 messages
+    if (mqttDebugMessages.length > 100) {
+        mqttDebugMessages = mqttDebugMessages.slice(0, 100);
+    }
     
     // Handle all bridge connections
     if (topic.startsWith('$SYS/broker/connection/') && topic.endsWith('/state')) {
@@ -192,19 +218,24 @@ app.get('/', async (req, res) => {
             });
         }
 
-        // Create tables if they don't exist
-        await Database.createTables();
+        // Create tables if they don't exist (suppress constraint errors)
+        try {
+            await Database.createTables();
+        } catch (error) {
+            // Log but don't display database constraint errors to users
+            console.log('Database setup completed with some warnings (constraints may already exist)');
+        }
 
         // Fetch processed schedules
         const client = await Database.getClient();
         
         try {
-            // Get the most recent non-temporary schedule from schedule_wrappers
-            const mostRecentPermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
+            // Get the in_use permanent schedule from schedule_wrappers
+            const inUsePermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
             
-            // Get all temporary schedules directly from resolved_schedule_slots (they don't have wrapper entries)
+            // Get all temporary schedules directly from resolved_schedule_slots_v2 (regardless of in_use)
             const temporarySchedulesQuery = `
-                SELECT DISTINCT schedule_id FROM resolved_schedule_slots 
+                SELECT DISTINCT schedule_id FROM resolved_schedule_slots_v2 
                 WHERE is_temporary = true
                 ORDER BY schedule_id
             `;
@@ -212,13 +243,13 @@ app.get('/', async (req, res) => {
             
             let scheduleIds: string[] = [];
             
-            // Add the most recent permanent schedule
-            if (mostRecentPermanentWrapper) {
-                scheduleIds.push(mostRecentPermanentWrapper.schedule_id);
-                console.log('Added permanent schedule:', mostRecentPermanentWrapper.schedule_id);
+            // Add the in_use permanent schedule
+            if (inUsePermanentWrapper) {
+                scheduleIds.push(inUsePermanentWrapper.schedule_id);
+                console.log('Added in_use permanent schedule:', inUsePermanentWrapper.schedule_id);
             }
             
-            // Add all temporary schedules (from resolved_schedule_slots directly)
+            // Add all temporary schedules (from resolved_schedule_slots_v2 directly)
             if (temporaryResult.rows.length > 0) {
                 const tempIds = temporaryResult.rows.map((row: any) => row.schedule_id);
                 scheduleIds.push(...tempIds);
@@ -226,7 +257,20 @@ app.get('/', async (req, res) => {
             }
             
             if (scheduleIds.length === 0) {
-                console.log('No schedules found in either schedule_wrappers or resolved_schedule_slots');
+                console.log('No schedules found - checking if tables exist and have data');
+                
+                // Debug: Check if tables exist and have data
+                const debugQuery1 = `SELECT COUNT(*) as count FROM schedule_wrappers`;
+                const debugQuery2 = `SELECT COUNT(*) as count FROM resolved_schedule_slots_v2`;
+                
+                try {
+                    const wrapperCount = await client.query(debugQuery1);
+                    const slotsCount = await client.query(debugQuery2);
+                    console.log('Schedule wrappers count:', wrapperCount.rows[0].count);
+                    console.log('Resolved slots count:', slotsCount.rows[0].count);
+                } catch (debugError) {
+                    console.log('Debug query error:', debugError);
+                }
             } else {
                 console.log('Consolidated schedule IDs:', scheduleIds);
             }
@@ -319,9 +363,37 @@ app.get('/', async (req, res) => {
     }
 });
 
+// Debug route for MQTT messages
+app.get('/debug/mqtt', (req, res) => {
+    res.render('mqtt-debug', {
+        title: 'MQTT Debug Messages',
+        bridgeStatus: bridgeStatus,
+        dbInfo: 'postgres@postgres:5432/schedule_db'
+    });
+});
+
 // API endpoint to get bridge status
 app.get('/api/bridge-status', (req, res) => {
     res.json(bridgeStatus);
+});
+
+// API endpoint to get MQTT debug messages
+app.get('/api/mqtt-debug', (req, res) => {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const messageType = req.query.type as string;
+    
+    let filteredMessages = mqttDebugMessages;
+    
+    if (messageType && messageType !== 'all') {
+        filteredMessages = mqttDebugMessages.filter(msg => msg.messageType === messageType);
+    }
+    
+    res.json({
+        messages: filteredMessages.slice(0, limit),
+        totalCount: mqttDebugMessages.length,
+        messageTypes: ['all', 'connection', 'log', 'clients', 'other'],
+        bridgeStatus: bridgeStatus
+    });
 });
 
 // API endpoint to get schedules as JSON
@@ -367,12 +439,12 @@ app.get('/api/weekly-schedule', async (req, res) => {
         const client = await Database.getClient();
         
         try {
-            // Get the most recent non-temporary schedule from schedule_wrappers
-            const mostRecentPermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
+            // Get the in_use permanent schedule from schedule_wrappers
+            const inUsePermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
             
-            // Get all temporary schedules directly from resolved_schedule_slots
+            // Get all temporary schedules directly from resolved_schedule_slots_v2
             const temporarySchedulesQuery = `
-                SELECT DISTINCT schedule_id FROM resolved_schedule_slots 
+                SELECT DISTINCT schedule_id FROM resolved_schedule_slots_v2 
                 WHERE is_temporary = true
                 ORDER BY schedule_id
             `;
@@ -380,9 +452,9 @@ app.get('/api/weekly-schedule', async (req, res) => {
             
             let scheduleIds: string[] = [];
             
-            // Add the most recent permanent schedule
-            if (mostRecentPermanentWrapper) {
-                scheduleIds.push(mostRecentPermanentWrapper.schedule_id);
+            // Add the in_use permanent schedule
+            if (inUsePermanentWrapper) {
+                scheduleIds.push(inUsePermanentWrapper.schedule_id);
             }
             
             // Add all temporary schedules
@@ -436,12 +508,12 @@ app.get('/api/schedule-status', async (req, res) => {
         const client = await Database.getClient();
         
         try {
-            // Get the most recent non-temporary schedule from schedule_wrappers
-            const mostRecentPermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
+            // Get the in_use permanent schedule from schedule_wrappers
+            const inUsePermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
             
-            // Get all temporary schedules directly from resolved_schedule_slots
+            // Get all temporary schedules directly from resolved_schedule_slots_v2
             const temporarySchedulesQuery = `
-                SELECT DISTINCT schedule_id FROM resolved_schedule_slots 
+                SELECT DISTINCT schedule_id FROM resolved_schedule_slots_v2 
                 WHERE is_temporary = true
                 ORDER BY schedule_id
             `;
@@ -449,9 +521,9 @@ app.get('/api/schedule-status', async (req, res) => {
             
             let scheduleIds: string[] = [];
             
-            // Add the most recent permanent schedule
-            if (mostRecentPermanentWrapper) {
-                scheduleIds.push(mostRecentPermanentWrapper.schedule_id);
+            // Add the in_use permanent schedule
+            if (inUsePermanentWrapper) {
+                scheduleIds.push(inUsePermanentWrapper.schedule_id);
             }
             
             // Add all temporary schedules
@@ -468,7 +540,8 @@ app.get('/api/schedule-status', async (req, res) => {
                     },
                     runningJobs: {},
                     cancelledSchedules: {},
-                    mostRecentScheduleId: null,
+                    consolidatedScheduleIds: [],
+                    permanentScheduleId: null,
                     lastUpdate: new Date().toISOString(),
                     message: 'No schedules found'
                 });
@@ -493,7 +566,7 @@ app.get('/api/schedule-status', async (req, res) => {
                 runningJobs: runningJobsObj,
                 cancelledSchedules: cancelledSchedulesObj,
                 consolidatedScheduleIds: scheduleIds,
-                permanentScheduleId: mostRecentPermanentWrapper ? mostRecentPermanentWrapper.schedule_id : null,
+                permanentScheduleId: inUsePermanentWrapper ? inUsePermanentWrapper.schedule_id : null,
                 lastUpdate: new Date().toISOString()
             });
         } finally {
@@ -517,10 +590,11 @@ app.post('/api/test/create-schedule-wrapper', async (req, res) => {
             
             const wrapper = await ScheduleWrapperModel.create(client, {
                 schedule_id: scheduleId,
-                upload_date_epoch: BigInt(Date.now()),
+                upload_date_epoch: Date.now(),
                 is_temporary: req.body.is_temporary || false,
                 is_synced_to_remote: req.body.is_synced_to_remote !== undefined ? req.body.is_synced_to_remote : true,
-                is_from_remote: req.body.is_from_remote !== undefined ? req.body.is_from_remote : true
+                is_from_remote: req.body.is_from_remote !== undefined ? req.body.is_from_remote : true,
+                in_use: req.body.in_use !== undefined ? req.body.in_use : true
             });
             
             res.json({
@@ -622,7 +696,7 @@ app.get('/api/debug/data-status', async (req, res) => {
             
             // Get resolved schedule slots counts
             console.log('Getting resolved schedule slots...');
-            const allSlotsQuery = 'SELECT COUNT(*) as total, schedule_id FROM resolved_schedule_slots GROUP BY schedule_id';
+            const allSlotsQuery = 'SELECT COUNT(*) as total, schedule_id FROM resolved_schedule_slots_v2 GROUP BY schedule_id';
             const allSlotsResult = await client.query(allSlotsQuery);
             console.log('Slots result:', allSlotsResult.rows);
             

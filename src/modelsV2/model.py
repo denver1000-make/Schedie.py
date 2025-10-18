@@ -85,8 +85,8 @@ class ScheduleWrapper:
     schedule_id: str
     upload_date_epoch: float
     is_temporary: bool
-    is_synced_to_remote: bool = True  # Default to True for remote sync status
-    is_from_remote: bool = True       # Default to True for remote origin
+    is_synced_to_remote: bool = True  
+    is_from_remote: bool = True       
 
 
 @dataclass

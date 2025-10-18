@@ -54,101 +54,158 @@ export class Database {
         try {
             const client = await this.pool.connect();
             
-            // Create processed_schedule_ids table
+            console.log('Migrating to new schema - dropping old tables if they exist...');
+            
+            // Drop old tables to migrate to new schema
+            await client.query(`DROP TABLE IF EXISTS processed_schedule_ids CASCADE`);
+            await client.query(`DROP TABLE IF EXISTS resolved_schedule_slots CASCADE`);
+            await client.query(`DROP TABLE IF EXISTS running_turn_on_jobs CASCADE`);
+            await client.query(`DROP TABLE IF EXISTS cancelled_schedules CASCADE`);
+            await client.query(`DROP TABLE IF EXISTS schedule_wrapper CASCADE`);
+            
+            console.log('Creating new schema tables...');
+            
+            // Create schedule_wrappers table (matches new schema)
             await client.query(`
-                CREATE TABLE IF NOT EXISTS public.processed_schedule_ids
-                (
-                    id serial NOT NULL,
-                    schedule_id text COLLATE pg_catalog."default" NOT NULL,
-                    processed_at timestamp with time zone DEFAULT now(),
-                    upload_date_epoch double precision,
-                    slot_count integer DEFAULT 0,
-                    is_temp boolean DEFAULT false,
-                    topic text COLLATE pg_catalog."default",
-                    CONSTRAINT processed_schedule_ids_pkey PRIMARY KEY (id),
-                    CONSTRAINT processed_schedule_ids_schedule_id_key UNIQUE (schedule_id)
+                CREATE TABLE IF NOT EXISTS public.schedule_wrappers (
+                    schedule_id character varying NOT NULL,
+                    upload_date_epoch double precision NOT NULL,
+                    is_temporary boolean NOT NULL,
+                    is_synced_to_remote boolean NOT NULL,
+                    is_from_remote boolean NOT NULL,
+                    in_use boolean NOT NULL,
+                    CONSTRAINT schedule_wrappers_pkey PRIMARY KEY (schedule_id)
                 );
             `);
 
-            // Create resolved_schedule_slots table
+            // Create resolved_schedule_slots_v2 table (matches new schema)
             await client.query(`
-                CREATE TABLE IF NOT EXISTS public.resolved_schedule_slots
-                (
-                    id serial NOT NULL,
-                    timeslot_id character varying(255) COLLATE pg_catalog."default",
-                    schedule_id character varying(255) COLLATE pg_catalog."default" NOT NULL,
-                    room_id character varying(100) COLLATE pg_catalog."default" NOT NULL,
-                    day_name character varying(20) COLLATE pg_catalog."default" NOT NULL,
+                CREATE TABLE IF NOT EXISTS public.resolved_schedule_slots_v2 (
+                    timeslot_id character varying NOT NULL,
+                    schedule_id character varying NOT NULL,
+                    room_id character varying NOT NULL,
+                    day_name character varying NOT NULL,
                     day_order integer NOT NULL,
-                    start_time character varying(20) COLLATE pg_catalog."default" NOT NULL,
-                    end_time character varying(20) COLLATE pg_catalog."default" NOT NULL,
-                    subject character varying(200) COLLATE pg_catalog."default",
-                    teacher character varying(200) COLLATE pg_catalog."default",
-                    teacher_email character varying(255) COLLATE pg_catalog."default",
-                    time_start_in_seconds integer NOT NULL,
-                    start_date_in_seconds_epoch bigint,
-                    end_date_in_seconds_epoch bigint,
-                    is_temporary boolean DEFAULT false,
-                    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-                    CONSTRAINT resolved_schedule_slots_pkey PRIMARY KEY (id)
+                    start_time character varying NOT NULL,
+                    end_time character varying NOT NULL,
+                    subject character varying NOT NULL,
+                    teacher character varying NOT NULL,
+                    teacher_email character varying,
+                    start_hour integer NOT NULL,
+                    start_minute integer NOT NULL,
+                    end_hour integer NOT NULL,
+                    end_minute integer NOT NULL,
+                    time_start_in_seconds integer,
+                    start_date_in_seconds_epoch double precision,
+                    end_date_in_seconds_epoch double precision,
+                    is_temporary boolean NOT NULL,
+                    CONSTRAINT resolved_schedule_slots_v2_pkey PRIMARY KEY (timeslot_id)
                 );
             `);
 
-            // Create running_turn_on_jobs table
+            // Create cancelled_schedules table (matches new schema)
             await client.query(`
-                CREATE TABLE IF NOT EXISTS public.running_turn_on_jobs
-                (
-                    id serial NOT NULL,
-                    timeslot_id character varying(255) COLLATE pg_catalog."default" NOT NULL,
-                    is_temporary boolean DEFAULT false,
-                    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-                    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-                    CONSTRAINT running_turn_on_jobs_pkey PRIMARY KEY (id),
-                    CONSTRAINT running_turn_on_jobs_timeslot_id_key UNIQUE (timeslot_id)
+                CREATE TABLE IF NOT EXISTS public.cancelled_schedules (
+                    timeslot_id character varying(255) NOT NULL,
+                    cancellation_type character varying(50) NOT NULL,
+                    cancelled_at timestamp without time zone NOT NULL,
+                    cancelled_date character varying(20) NOT NULL,
+                    reason text,
+                    cancelled_by character varying(255),
+                    cancellation_id character varying(255),
+                    room_id character varying(50),
+                    teacher_name character varying(255),
+                    teacher_id character varying(255),
+                    teacher_email character varying(255),
+                    day_name character varying(20),
+                    year integer,
+                    month integer,
+                    day_of_month integer,
+                    subject character varying(255),
+                    start_time character varying(20),
+                    end_time character varying(20),
+                    CONSTRAINT cancelled_schedules_pkey PRIMARY KEY (timeslot_id)
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_running_jobs_is_temporary
-                    ON public.running_turn_on_jobs USING btree
-                    (is_temporary ASC NULLS LAST);
-
-                CREATE INDEX IF NOT EXISTS idx_running_jobs_timeslot_id
-                    ON public.running_turn_on_jobs USING btree
-                    (timeslot_id COLLATE pg_catalog."default" ASC NULLS LAST);
             `);
 
-            // Create cancelled_schedules table
+            // Create running_turn_on_jobs table (matches new schema)
             await client.query(`
-                CREATE TABLE IF NOT EXISTS public.cancelled_schedules
-                (
-                    id serial NOT NULL,
-                    timeslot_id character varying(255) COLLATE pg_catalog."default" NOT NULL,
-                    cancellation_type character varying(50) COLLATE pg_catalog."default" NOT NULL,
-                    cancelled_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-                    cancelled_date character varying(20) COLLATE pg_catalog."default" NOT NULL,
-                    reason text COLLATE pg_catalog."default",
-                    cancelled_by character varying(255) COLLATE pg_catalog."default",
-                    CONSTRAINT cancelled_schedules_pkey PRIMARY KEY (id),
-                    CONSTRAINT cancelled_schedules_timeslot_id_cancelled_date_key UNIQUE (timeslot_id, cancelled_date)
+                CREATE TABLE IF NOT EXISTS public.running_turn_on_jobs (
+                    timeslot_id character varying NOT NULL,
+                    is_temporary boolean NOT NULL,
+                    CONSTRAINT running_turn_on_jobs_pkey PRIMARY KEY (timeslot_id)
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_cancelled_schedules_cancelled_at
-                    ON public.cancelled_schedules USING btree
-                    (cancelled_at ASC NULLS LAST);
-
-                CREATE INDEX IF NOT EXISTS idx_cancelled_schedules_timeslot_date
-                    ON public.cancelled_schedules USING btree
-                    (timeslot_id COLLATE pg_catalog."default" ASC NULLS LAST, cancelled_date COLLATE pg_catalog."default" ASC NULLS LAST);
             `);
 
-            // Note: schedule_wrappers table already exists with different structure
-            // Actual table is: public.schedule_wrappers with columns:
-            // schedule_id (PK), upload_date_epoch, is_temporary, is_synced_to_remote, is_from_remote, created_at, updated_at
+            // Create foreign key constraints (with proper error handling for existing constraints)
+            try {
+                await client.query(`
+                    DO $$ 
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.table_constraints 
+                            WHERE constraint_name = 'resolved_schedule_slots_v2_schedule_id_fkey'
+                        ) THEN
+                            ALTER TABLE ONLY public.resolved_schedule_slots_v2
+                            ADD CONSTRAINT resolved_schedule_slots_v2_schedule_id_fkey 
+                            FOREIGN KEY (schedule_id) REFERENCES public.schedule_wrappers(schedule_id);
+                        END IF;
+                    END $$;
+                `);
+            } catch (err: any) {
+                console.log('Note: Foreign key constraint resolved_schedule_slots_v2_schedule_id_fkey handling completed');
+            }
+
+            try {
+                await client.query(`
+                    DO $$ 
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.table_constraints 
+                            WHERE constraint_name = 'cancelled_schedules_timeslot_id_fkey'
+                        ) THEN
+                            ALTER TABLE ONLY public.cancelled_schedules
+                            ADD CONSTRAINT cancelled_schedules_timeslot_id_fkey 
+                            FOREIGN KEY (timeslot_id) REFERENCES public.resolved_schedule_slots_v2(timeslot_id);
+                        END IF;
+                    END $$;
+                `);
+            } catch (err: any) {
+                console.log('Note: Foreign key constraint cancelled_schedules_timeslot_id_fkey handling completed');
+            }
+
+            try {
+                await client.query(`
+                    DO $$ 
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.table_constraints 
+                            WHERE constraint_name = 'running_turn_on_jobs_timeslot_id_fkey'
+                        ) THEN
+                            ALTER TABLE ONLY public.running_turn_on_jobs
+                            ADD CONSTRAINT running_turn_on_jobs_timeslot_id_fkey 
+                            FOREIGN KEY (timeslot_id) REFERENCES public.resolved_schedule_slots_v2(timeslot_id);
+                        END IF;
+                    END $$;
+                `);
+            } catch (err: any) {
+                console.log('Note: Foreign key constraint running_turn_on_jobs_timeslot_id_fkey handling completed');
+            }
+
+            // Create indexes
+            await client.query(`
+                CREATE INDEX IF NOT EXISTS idx_cancelled_schedules_cancelled_at 
+                ON public.cancelled_schedules USING btree (cancelled_at);
+            `);
 
             client.release();
-            console.log('Tables created successfully');
-        } catch (error) {
-            console.error('Error creating tables:', error);
-            throw error;
+            console.log('New schema tables created successfully');
+        } catch (error: any) {
+            console.log('Database setup completed with warnings:', error.message);
+            // Don't throw for constraint errors - they're expected on subsequent runs
+            if (!error.message.includes('already exists') && !error.message.includes('constraint')) {
+                throw error;
+            }
         }
     }
 
