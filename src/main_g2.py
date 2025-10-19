@@ -47,6 +47,10 @@ from src.mqtt.mqtt_manager import (
     SCHEDULE_UPDATE_ACK
 )
 
+# Additional ACK constants
+SETTINGS_UPDATE_ACK = "settings_update_ack"
+CANCEL_SCHEDULE_ACK = "cancel_schedule_ack"
+
 def load_config():
     """Load environment configuration"""
     envFile = os.getenv("ENV_FILE")
@@ -234,6 +238,22 @@ def main():
         else:
             print("ℹ️ No new slots to schedule")
         
+        # Send ACK after successful processing
+        ack_payload = {
+            "schedule_id": schedule_wrapper_pydantic.schedule_id,
+            "received": True,
+            "processed": True,
+            "scheduled": len(inserted_timeslot_ids) if inserted_timeslot_ids else 0,
+            "processed_at": time.time()
+        }
+        
+        publish_v2(
+            client=client,
+            topic=f"{SCHEDULE_UPDATE_ACK}/{schedule_wrapper_pydantic.schedule_id}",
+            msg=json.dumps(ack_payload),
+            log=True
+        )
+        
         print(f"✅ Completed schedule update for: {schedule_wrapper_pydantic.schedule_id}")
     
     def receive_cancellation_notice(client: mqtt.Client, msg: mqtt.MQTTMessage):
@@ -321,6 +341,21 @@ def main():
                 insert_cancellation_info(cancelled_schedule)
                 print(f"✅ Added cancellation record for future date {cancelled_date}, timeslot {canc_obj.timeslot_id}")    
             
+            # Send cancellation ACK after successful processing
+            ack_payload = {
+                "timeslot_id": canc_obj.timeslot_id,
+                "cancellation_id": canc_obj.id,
+                "received": True,
+                "processed": True,
+                "processed_at": time.time()
+            }
+            
+            publish_v2(
+                client=client,
+                topic=f"{CANCEL_SCHEDULE_ACK}/{canc_obj.timeslot_id}",
+                msg=json.dumps(ack_payload),
+                log=True
+            )
 
         except json.JSONDecodeError as e:
             print(f"❌ Invalid JSON in cancellation payload: {e}")
