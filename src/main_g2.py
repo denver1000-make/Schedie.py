@@ -366,6 +366,7 @@ def main():
                 client=client,
                 topic=f"{CANCEL_SCHEDULE_ACK}/{ack_payload['cancellation_id']}",
                 msg=json.dumps(ack_payload),
+                retain=True,
                 log=True
             )
 
