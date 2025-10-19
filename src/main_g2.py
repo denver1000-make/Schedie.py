@@ -264,7 +264,7 @@ def main():
     
     def receive_cancellation_notice(client: mqtt.Client, msg: mqtt.MQTTMessage):
         print(f"🔍 CANCELLATION CALLBACK CALLED - Topic: {msg.topic}")
-        
+    
         # Check for null payload (retained message clearing)
         if not msg.payload or len(msg.payload) == 0:
             print("ℹ️ POSSIBLY CLEARING RETENTION - Empty payload received")
@@ -362,6 +362,8 @@ def main():
                 "processed_at": time.time()
             }
             
+            
+            
             publish_v2(
                 client=client,
                 topic=f"{CANCEL_SCHEDULE_ACK}/{ack_payload['cancellation_id']}",
@@ -369,6 +371,8 @@ def main():
                 retain=True,
                 log=True
             )
+            
+        
 
         except json.JSONDecodeError as e:
             print(f"❌ Invalid JSON in cancellation payload: {e}")
