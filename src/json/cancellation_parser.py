@@ -33,6 +33,7 @@ class CancellationRequestJson(BaseModel):
     teacher_id: str = Field(alias="teacher_id")
     teacher_name: str = Field(alias="teacher_name")
     time_slot: TimeSlotJson = Field(alias="time_slot")
+    cancellation_id: str = Field(alias="")
     timeslot_id: str = Field(alias="timeslot_id")
     year: int = Field(alias="year")
     

@@ -178,6 +178,12 @@ def main():
     
     def receive_schedule_update(client: mqtt.Client, msg: mqtt.MQTTMessage):
         print(f"🔍 SCHEDULE UPDATE CALLBACK CALLED - Topic: {msg.topic}")
+        
+        # Check for null payload (retained message clearing)
+        if not msg.payload or len(msg.payload) == 0:
+            print("ℹ️ POSSIBLY CLEARING RETENTION - Empty payload received")
+            return
+            
         payload = msg.payload.decode()
         json_map = json.loads(payload)
         
@@ -258,88 +264,94 @@ def main():
     
     def receive_cancellation_notice(client: mqtt.Client, msg: mqtt.MQTTMessage):
         print(f"🔍 CANCELLATION CALLBACK CALLED - Topic: {msg.topic}")
+        
+        # Check for null payload (retained message clearing)
+        if not msg.payload or len(msg.payload) == 0:
+            print("ℹ️ POSSIBLY CLEARING RETENTION - Empty payload received")
+            return
+            
         try:
             payload_str = msg.payload.decode()
             json_data = json.loads(payload_str)
             canc_obj = CancellationRequestJson.model_validate(json_data)
-            print(f"✅ Cancellation received: {canc_obj}")
+            # print(f"✅ Cancellation received: {canc_obj}")
             
-            from src.sql_orm.cancellation.cancelled_schedule_orm import insert_cancellation_info, CancelledScheduleOrm
-            from src.sql_orm.turn_on_jobs.turn_on_job_orm import remove_running_job
-            from src.g2_utils.jobs.jobs_g2 import get_schedule_slot_by_timeslot_id
-            from apscheduler.triggers.date import DateTrigger
-            from src.g2_utils.mqtt.mqtt_funcs_g2 import mqtt_turn_off
+            # from src.sql_orm.cancellation.cancelled_schedule_orm import insert_cancellation_info, CancelledScheduleOrm
+            # from src.sql_orm.turn_on_jobs.turn_on_job_orm import remove_running_job
+            # from src.g2_utils.jobs.jobs_g2 import get_schedule_slot_by_timeslot_id
+            # from apscheduler.triggers.date import DateTrigger
+            # from src.g2_utils.mqtt.mqtt_funcs_g2 import mqtt_turn_off
             
-            time_now = datetime.datetime.now(tz=DEVICE_TZ)
+            # time_now = datetime.datetime.now(tz=DEVICE_TZ)
             
-            # Get the schedule slot info to determine if it's temporary
-            schedule_slot = get_schedule_slot_by_timeslot_id(canc_obj.timeslot_id)
-            if not schedule_slot:
-                print(f"❌ Schedule slot not found for timeslot_id: {canc_obj.timeslot_id}")
-                return
+            # # Get the schedule slot info to determine if it's temporary
+            # schedule_slot = get_schedule_slot_by_timeslot_id(canc_obj.timeslot_id)
+            # if not schedule_slot:
+            #     print(f"❌ Schedule slot not found for timeslot_id: {canc_obj.timeslot_id}")
+            #     return
             
-            # Check if cancellation is for today's instance
-            is_today_cancellation = (
-                time_now.day == canc_obj.day_of_month and
-                time_now.month == canc_obj.month and 
-                time_now.year == canc_obj.year
-            )
+            # # Check if cancellation is for today's instance
+            # is_today_cancellation = (
+            #     time_now.day == canc_obj.day_of_month and
+            #     time_now.month == canc_obj.month and 
+            #     time_now.year == canc_obj.year
+            # )
             
-            running_job = get_running_job(canc_obj.timeslot_id)
+            # running_job = get_running_job(canc_obj.timeslot_id)
             
             
-            if schedule_slot.is_temporary or (not schedule_slot.is_temporary and is_today_cancellation and running_job):
-                if running_job:
-                    send_shutdown_warning(
-                        mqtt_client=mqtt_client,
-                        room_id=canc_obj.room_id
-                    )
+            # if schedule_slot.is_temporary or (not schedule_slot.is_temporary and is_today_cancellation and running_job):
+            #     if running_job:
+            #         send_shutdown_warning(
+            #             mqtt_client=mqtt_client,
+            #             room_id=canc_obj.room_id
+            #         )
                     
-                    shutdown_time = time_now + datetime.timedelta(minutes=5)
+            #         shutdown_time = time_now + datetime.timedelta(minutes=5)
                     
-                    def shutdown_cancelled_room():
-                        mqtt_turn_off(
-                            room_id=canc_obj.room_id,
-                            mqtt_client=mqtt_client
-                        )
-                        remove_running_job(canc_obj.timeslot_id)
+            #         def shutdown_cancelled_room():
+            #             mqtt_turn_off(
+            #                 room_id=canc_obj.room_id,
+            #                 mqtt_client=mqtt_client
+            #             )
+            #             remove_running_job(canc_obj.timeslot_id)
                     
-                    scheduler.add_job(
-                        func=shutdown_cancelled_room,
-                        trigger=DateTrigger(run_date=shutdown_time),
-                        id=f"cancel_shutdown_{canc_obj.timeslot_id}",
-                        replace_existing=True
-                    )
+            #         scheduler.add_job(
+            #             func=shutdown_cancelled_room,
+            #             trigger=DateTrigger(run_date=shutdown_time),
+            #             id=f"cancel_shutdown_{canc_obj.timeslot_id}",
+            #             replace_existing=True
+            #         )
                     
-                    print(f"✅ Scheduled shutdown for running room {canc_obj.room_id} in 5 minutes (Today's cancellation)")
-                else:
-                    print(f"✅ Cancellation processed for today but schedule not currently running")
-            else:
-                cancelled_date = f"{canc_obj.year:04d}-{canc_obj.month:02d}-{canc_obj.day_of_month:02d}"
+            #         print(f"✅ Scheduled shutdown for running room {canc_obj.room_id} in 5 minutes (Today's cancellation)")
+            #     else:
+            #         print(f"✅ Cancellation processed for today but schedule not currently running")
+            # else:
+            #     cancelled_date = f"{canc_obj.year:04d}-{canc_obj.month:02d}-{canc_obj.day_of_month:02d}"
                 
-                cancelled_schedule = CancelledScheduleOrm(
-                    timeslot_id=canc_obj.timeslot_id,
-                    cancellation_type="permanent_instance" if not schedule_slot.is_temporary else "temporary_instance",
-                    cancelled_at=time_now,
-                    cancelled_date=cancelled_date,
-                    reason=canc_obj.reason,
-                    cancelled_by=canc_obj.teacher_email,
-                    cancellation_id=canc_obj.id,
-                    room_id=canc_obj.room_id,
-                    teacher_name=canc_obj.teacher_name,
-                    teacher_id=canc_obj.teacher_id,
-                    teacher_email=canc_obj.teacher_email,
-                    day_name=canc_obj.day,
-                    year=canc_obj.year,
-                    month=canc_obj.month,
-                    day_of_month=canc_obj.day_of_month,
-                    subject=schedule_slot.subject,
-                    start_time=schedule_slot.start_time,
-                    end_time=schedule_slot.end_time
-                )
+            #     cancelled_schedule = CancelledScheduleOrm(
+            #         timeslot_id=canc_obj.timeslot_id,
+            #         cancellation_type="permanent_instance" if not schedule_slot.is_temporary else "temporary_instance",
+            #         cancelled_at=time_now,
+            #         cancelled_date=cancelled_date,
+            #         reason=canc_obj.reason,
+            #         cancelled_by=canc_obj.teacher_email,
+            #         cancellation_id=canc_obj.id,
+            #         room_id=canc_obj.room_id,
+            #         teacher_name=canc_obj.teacher_name,
+            #         teacher_id=canc_obj.teacher_id,
+            #         teacher_email=canc_obj.teacher_email,
+            #         day_name=canc_obj.day,
+            #         year=canc_obj.year,
+            #         month=canc_obj.month,
+            #         day_of_month=canc_obj.day_of_month,
+            #         subject=schedule_slot.subject,
+            #         start_time=schedule_slot.start_time,
+            #         end_time=schedule_slot.end_time
+            #     )
                 
-                insert_cancellation_info(cancelled_schedule)
-                print(f"✅ Added cancellation record for future date {cancelled_date}, timeslot {canc_obj.timeslot_id}")    
+            #     insert_cancellation_info(cancelled_schedule)
+            #     print(f"✅ Added cancellation record for future date {cancelled_date}, timeslot {canc_obj.timeslot_id}")    
             
             # Send cancellation ACK after successful processing
             ack_payload = {
@@ -352,7 +364,7 @@ def main():
             
             publish_v2(
                 client=client,
-                topic=f"{CANCEL_SCHEDULE_ACK}/{canc_obj.timeslot_id}",
+                topic=f"{CANCEL_SCHEDULE_ACK}/{ack_payload['cancellation_id']}",
                 msg=json.dumps(ack_payload),
                 log=True
             )
@@ -366,6 +378,12 @@ def main():
     
     def receive_temporary_schedule(client: mqtt.Client, msg: mqtt.MQTTMessage):
         print(f"🔍 TEMPORARY SCHEDULE CALLBACK CALLED - Topic: {msg.topic}")
+        
+        # Check for null payload (retained message clearing)
+        if not msg.payload or len(msg.payload) == 0:
+            print("ℹ️ POSSIBLY CLEARING RETENTION - Empty payload received")
+            return
+            
         try:
             payload_str = msg.payload.decode()
             json_data = json.loads(payload_str)
