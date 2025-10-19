@@ -22,20 +22,35 @@ class TimeSlotJson(BaseModel):
 
 
 class CancellationRequestJson(BaseModel):
-    """Pydantic model for cancellation request JSON structure"""
-    day: str = Field(alias="day")
-    day_of_month: int = Field(alias="day_of_month")
-    id: str = Field(alias="id")
-    month: int = Field(alias="month")
-    reason: str = Field(alias="reason")
-    room_id: str = Field(alias="room_id")
-    teacher_email: str = Field(alias="teacher_email")
+    """Pydantic model for flattened cancellation request JSON structure"""
+    # Core cancellation fields
+    received_by_hub: bool = Field(alias="received_by_hub", default=False)
+    cancellation_id: Optional[str] = Field(alias="cancellation_id", default=None)
     teacher_id: str = Field(alias="teacher_id")
-    teacher_name: str = Field(alias="teacher_name")
-    time_slot: TimeSlotJson = Field(alias="time_slot")
-    cancellation_id: str = Field(alias="")
     timeslot_id: str = Field(alias="timeslot_id")
+    teacher_name: str = Field(alias="teacher_name")
+    teacher_email: str = Field(alias="teacher_email")
+    day: str = Field(alias="day")
+    room_id: str = Field(alias="room_id")
+    reason: str = Field(alias="reason")
+    accepted: Optional[bool] = Field(alias="accepted", default=None)
     year: int = Field(alias="year")
+    month: int = Field(alias="month")
+    day_of_month: int = Field(alias="day_of_month")
+    is_temporary: bool = Field(alias="is_temporary", default=False)
+    
+    # Flattened timeslot fields (previously nested in time_slot object)
+    start_time: Optional[str] = Field(alias="start_time", default=None)
+    end_time: Optional[str] = Field(alias="end_time", default=None)
+    subject: Optional[str] = Field(alias="subject", default=None)
+    start_hour: Optional[int] = Field(alias="start_hour", default=None)
+    start_minute: Optional[int] = Field(alias="start_minute", default=None)
+    end_hour: Optional[int] = Field(alias="end_hour", default=None)
+    end_minute: Optional[int] = Field(alias="end_minute", default=None)
+    teacher: Optional[str] = Field(alias="teacher", default=None)
+    time_start_in_seconds: Optional[int] = Field(alias="time_start_in_seconds", default=None)
+    start_epoch_in_seconds: Optional[int] = Field(alias="start_epoch_in_seconds", default=None)
+    end_epoch_in_seconds: Optional[int] = Field(alias="end_epoch_in_seconds", default=None)
     
     class Config:
         populate_by_name = True
@@ -90,10 +105,10 @@ def get_cancellation_summary(cancellation_request: CancellationRequestJson) -> s
         str: Human-readable cancellation summary
     """
     return (
-        f"Cancellation for {cancellation_request.time_slot.subject} class "
+        f"Cancellation for {cancellation_request.subject or 'Unknown'} class "
         f"in {cancellation_request.room_id} on {cancellation_request.day} "
         f"{cancellation_request.month}/{cancellation_request.day_of_month}/{cancellation_request.year} "
-        f"from {cancellation_request.time_slot.start_time} to {cancellation_request.time_slot.end_time}. "
+        f"from {cancellation_request.start_time or 'Unknown'} to {cancellation_request.end_time or 'Unknown'}. "
         f"Teacher: {cancellation_request.teacher_name}. "
         f"Reason: {cancellation_request.reason}"
     )

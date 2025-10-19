@@ -356,7 +356,7 @@ def main():
             # Send cancellation ACK after successful processing
             ack_payload = {
                 "timeslot_id": canc_obj.timeslot_id,
-                "cancellation_id": canc_obj.id,
+                "cancellation_id": canc_obj.cancellation_id,
                 "received": True,
                 "processed": True,
                 "processed_at": time.time()
