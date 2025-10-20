@@ -42,6 +42,28 @@ class CancelledScheduleOrm(Base):
         sa.Index('idx_cancelled_schedules_cancelled_at', 'cancelled_at'),
     )
 
+def check_cancellation_id_exists(cancellation_id: str) -> bool:
+    """
+    Check if a cancellation_id already exists in the database.
+    
+    Args:
+        cancellation_id: The cancellation ID to check
+        
+    Returns:
+        bool: True if cancellation_id exists, False otherwise
+    """
+    try:
+        session = get_session()
+        try:
+            result = session.query(CancelledScheduleOrm).filter(
+                CancelledScheduleOrm.cancellation_id == cancellation_id
+            ).first()
+            return result is not None
+        finally:
+            session.close()
+    except sa_exception.SQLAlchemyError:
+        return False
+
 def check_if_timeslot_cancelled(
     timeslot_id: str
 ) -> CancelledScheduleOrm | None:
