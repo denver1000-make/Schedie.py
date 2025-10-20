@@ -3,6 +3,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from src.sql_orm.connection.sqlalchemy_pg import get_session, get_session_factory
 from src.sql_orm.connection.base import Base
+import sqlalchemy.exc as sa_exception
 
 class ResolvedScheduleSlotOrm(Base):
     __tablename__ = 'resolved_schedule_slots_v2'
@@ -31,6 +32,28 @@ class ResolvedScheduleSlotOrm(Base):
     schedule_wrapper = relationship("ScheduleWrapperOrm", back_populates="schedule_slots")
     cancelled_schedule = relationship("CancelledScheduleOrm", back_populates="schedule_slot", uselist=False)
     
+def check_timeslot_id_exists(timeslot_id: str) -> bool:
+    """
+    Check if a timeslot_id already exists in the database.
+    
+    Args:
+        timeslot_id: The timeslot ID to check
+        
+    Returns:
+        bool: True if timeslot_id exists, False otherwise
+    """
+    try:
+        session = get_session()
+        try:
+            result = session.query(ResolvedScheduleSlotOrm).filter(
+                ResolvedScheduleSlotOrm.timeslot_id == timeslot_id
+            ).first()
+            return result is not None
+        finally:
+            session.close()
+    except sa_exception.SQLAlchemyError:
+        return False
+
 def get_resolved_slots_by_schedule_id(
     schedule_id: str
 ) -> List[ResolvedScheduleSlotOrm]:

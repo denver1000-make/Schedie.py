@@ -392,6 +392,13 @@ def main():
             
             print(f"✅ Temporary schedule received: {get_temp_schedule_summary(temp_schedule)}")
             
+            from src.sql_orm.schedule.resolved_schedule_slots_orm import check_timeslot_id_exists
+            
+            # Check for duplicate timeslot_id
+            if check_timeslot_id_exists(temp_schedule.timeslot_id):
+                print(f"⚠️ Temporary schedule {temp_schedule.timeslot_id} already exists - skipping duplicate")
+                return
+            
             # Convert to ORM objects
             schedule_wrapper, schedule_slot = convert_temp_schedule_to_orm(temp_schedule)
             
