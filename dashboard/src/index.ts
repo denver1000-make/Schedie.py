@@ -233,13 +233,8 @@ app.get('/', async (req, res) => {
             // Get the in_use permanent schedule from schedule_wrappers
             const inUsePermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
             
-            // Get all temporary schedules directly from resolved_schedule_slots_v2 (regardless of in_use)
-            const temporarySchedulesQuery = `
-                SELECT DISTINCT schedule_id FROM resolved_schedule_slots_v2 
-                WHERE is_temporary = true
-                ORDER BY schedule_id
-            `;
-            const temporaryResult = await client.query(temporarySchedulesQuery);
+            // Get all temporary schedules from schedule_wrappers_v2 (active by existence)
+            const temporaryWrappers = await ScheduleWrapperModel.findActiveTemporary(client);
             
             let scheduleIds: string[] = [];
             
@@ -249,9 +244,9 @@ app.get('/', async (req, res) => {
                 console.log('Added in_use permanent schedule:', inUsePermanentWrapper.schedule_id);
             }
             
-            // Add all temporary schedules (from resolved_schedule_slots_v2 directly)
-            if (temporaryResult.rows.length > 0) {
-                const tempIds = temporaryResult.rows.map((row: any) => row.schedule_id);
+            // Add all temporary schedules (active by existence)
+            if (temporaryWrappers.length > 0) {
+                const tempIds = temporaryWrappers.map(wrapper => wrapper.schedule_id);
                 scheduleIds.push(...tempIds);
                 console.log('Added temporary schedules:', tempIds);
             }
@@ -260,13 +255,13 @@ app.get('/', async (req, res) => {
                 console.log('No schedules found - checking if tables exist and have data');
                 
                 // Debug: Check if tables exist and have data
-                const debugQuery1 = `SELECT COUNT(*) as count FROM schedule_wrappers`;
+                const debugQuery1 = `SELECT COUNT(*) as count FROM schedule_wrappers_v2`;
                 const debugQuery2 = `SELECT COUNT(*) as count FROM resolved_schedule_slots_v2`;
                 
                 try {
                     const wrapperCount = await client.query(debugQuery1);
                     const slotsCount = await client.query(debugQuery2);
-                    console.log('Schedule wrappers count:', wrapperCount.rows[0].count);
+                    console.log('Schedule wrappers_v2 count:', wrapperCount.rows[0].count);
                     console.log('Resolved slots count:', slotsCount.rows[0].count);
                 } catch (debugError) {
                     console.log('Debug query error:', debugError);
