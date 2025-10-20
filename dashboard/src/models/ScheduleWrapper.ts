@@ -18,7 +18,7 @@ export class ScheduleWrapperModel {
             is_synced_to_remote boolean NOT NULL,
             is_from_remote boolean NOT NULL,
             in_use boolean NOT NULL,
-            CONSTRAINT schedule_wrappers_v2_pkey PRIMARY KEY (schedule_id)
+            CONSTRAINT schedule_wrappers_pkey PRIMARY KEY (schedule_id)
         );
     `;
 

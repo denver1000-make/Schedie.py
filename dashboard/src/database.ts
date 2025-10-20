@@ -148,7 +148,7 @@ export class Database {
                         ) THEN
                             ALTER TABLE ONLY public.resolved_schedule_slots_v2
                             ADD CONSTRAINT resolved_schedule_slots_v2_schedule_id_fkey 
-                            FOREIGN KEY (schedule_id) REFERENCES public.schedule_wrappers(schedule_id);
+                            FOREIGN KEY (schedule_id) REFERENCES public.schedule_wrappers_v2(schedule_id);
                         END IF;
                     END $$;
                 `);
