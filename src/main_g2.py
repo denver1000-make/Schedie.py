@@ -10,7 +10,6 @@ import os
 import json
 import time
 from typing import List
-from zoneinfo import ZoneInfo
 from psycopg2 import pool as pg_pool
 from dotenv import load_dotenv
 import paho.mqtt.client as mqtt
@@ -32,7 +31,7 @@ from src.mqtt.mqtt_manager import (
 from src.sql.db_connection import get_pg_connection
 from src.schedulerv2.scheduler_v2 import init_scheduler
 
-# Import constants from centralized location
+# Import constants
 from src.constants import DEVICE_TZ, MINUTE_MARK_TO_WARN, MINUTE_MARK_TO_SKIP
 
 # Import MQTT topic constants from mqtt_manager (same as main_v3)

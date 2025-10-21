@@ -20,10 +20,10 @@ export interface ResolvedScheduleSlots {
 }
 
 export class ResolvedScheduleSlotsModel {
-    static tableName = 'resolved_schedule_slots';
+    static tableName = 'resolved_schedule_slots_v2';
 
     static createTableQuery = `
-        CREATE TABLE IF NOT EXISTS public.resolved_schedule_slots (
+        CREATE TABLE IF NOT EXISTS public.resolved_schedule_slots_v2 (
             timeslot_id character varying NOT NULL,
             schedule_id character varying NOT NULL,
             room_id character varying NOT NULL,
@@ -42,7 +42,7 @@ export class ResolvedScheduleSlotsModel {
             start_date_in_seconds_epoch double precision,
             end_date_in_seconds_epoch double precision,
             is_temporary boolean NOT NULL,
-            CONSTRAINT resolved_schedule_slots_pkey PRIMARY KEY (timeslot_id)
+            CONSTRAINT resolved_schedule_slots_v2_pkey PRIMARY KEY (timeslot_id)
         );
     `;
 

@@ -285,13 +285,13 @@ app.get('/', async (req, res) => {
                 console.log('No schedules found - checking if tables exist and have data');
                 
                 // Debug: Check if tables exist and have data
-                const debugQuery1 = `SELECT COUNT(*) as count FROM schedule_wrappers`;
-                const debugQuery2 = `SELECT COUNT(*) as count FROM resolved_schedule_slots`;
+                const debugQuery1 = `SELECT COUNT(*) as count FROM schedule_wrappers_v2`;
+                const debugQuery2 = `SELECT COUNT(*) as count FROM resolved_schedule_slots_v2`;
                 
                 try {
                     const wrapperCount = await client.query(debugQuery1);
                     const slotsCount = await client.query(debugQuery2);
-                    console.log('Schedule wrappers count:', wrapperCount.rows[0].count);
+                    console.log('Schedule wrappers_v2 count:', wrapperCount.rows[0].count);
                     console.log('Resolved slots count:', slotsCount.rows[0].count);
                 } catch (debugError) {
                     console.log('Debug query error:', debugError);
