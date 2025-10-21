@@ -143,6 +143,24 @@ def warning_proc(
         print(f"Schedule slot not found for timeslot_id: {timeslot_id}")
         return
     
+    # Check for date-specific cancellation of current schedule
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    
+    DEVICE_TZ = ZoneInfo("Asia/Manila")
+    today_date = datetime.now(tz=DEVICE_TZ).strftime("%Y-%m-%d")
+    
+    from src.sql_orm.cancellation.cancelled_schedule_orm import check_if_timeslot_cancelled_on_date
+    
+    cancelled_schedule_info = check_if_timeslot_cancelled_on_date(
+        timeslot_id=timeslot_id,
+        date_str=today_date
+    )
+    
+    if cancelled_schedule_info:
+        print(f"[WARNING_PROC] Cancellation Detected for Timeslot {timeslot_id} on {today_date} - skipping warning")
+        return
+    
     nearby_timeslot = get_nearby_schedules_for_room_and_day(
         current_end_hour=resolved_schedule_slot_orm.end_hour,
         current_end_minute=resolved_schedule_slot_orm.end_minute,
@@ -151,14 +169,33 @@ def warning_proc(
         room_id=resolved_schedule_slot_orm.room_id
     )
     
-    print(f"Nearby timeslot {nearby_timeslot}")
+    print(f"[WARNING_PROC] Nearby timeslot {nearby_timeslot}")
+    
+    will_skip_turn_off = False  # Default to shutdown warning
     
     if nearby_timeslot:
+        print(f"[WARNING_PROC] {timeslot_id} has a nearby sched {nearby_timeslot.timeslot_id}")
+        # Check if nearby schedule is cancelled for today's date
+        is_nearby_slot_cancelled = check_if_timeslot_cancelled_on_date(
+            timeslot_id=nearby_timeslot.timeslot_id,
+            date_str=today_date
+        ) is not None
+        
+        # Only send "schedule ending" if nearby schedule exists and is NOT cancelled
+        if not is_nearby_slot_cancelled:
+            will_skip_turn_off = True
+        
+        print(f"[WARNING_PROC] {nearby_timeslot.timeslot_id} is_cancelled: {is_nearby_slot_cancelled}")
+    
+    # Send appropriate warning based on whether turn_off will be skipped
+    if will_skip_turn_off:
+        print(f"[WARNING_PROC] Schedule ending - room staying on for nearby schedule")
         send_schedule_ending(
             resolved_schedule_slot_orm.room_id,
             mqtt_client=mqtt_client
         )
     else:
+        print(f"[WARNING_PROC] Room will shutdown - no nearby active schedules")
         send_shutdown_warning(
             resolved_schedule_slot_orm.room_id,
             mqtt_client

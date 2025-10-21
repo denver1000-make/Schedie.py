@@ -1,1250 +1,537 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
+    <title>Smart Schedule & Power Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SchedulerDashboard - MQTT Schedule Monitor</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.css" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #f8f9fa;
-            color: #212529;
-            line-height: 1.6;
-        }
-        
-        .wrapper {
-            display: flex;
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            color: #333;
         }
         
-        /* Sidebar */
-        .sidebar {
-            width: 280px;
-            background: #233362;
-            color: white;
-            display: flex;
-            flex-direction: column;
-            position: fixed;
-            height: 100vh;
-            overflow-y: auto;
-            z-index: 1000;
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
         }
         
-        .sidebar-brand {
-            padding: 1.5rem;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-            display: flex;
-            align-items: center;
-            font-size: 1.25rem;
-            font-weight: 600;
-            text-decoration: none;
-            color: white;
-        }
-        
-        .sidebar-brand .brand-icon {
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 12px;
-            font-size: 20px;
-        }
-        
-        .sidebar-nav {
-            flex: 1;
-            padding: 1rem 0;
-        }
-        
-        .nav-item {
-            margin: 0.25rem 0;
-        }
-        
-        .nav-link {
-            display: flex;
-            align-items: center;
-            padding: 0.75rem 1.5rem;
-            color: rgba(255,255,255,0.8);
-            text-decoration: none;
-            transition: all 0.2s ease;
-            border-radius: 0;
-            margin: 0 1rem;
-            border-radius: 8px;
-        }
-        
-        .nav-link:hover,
-        .nav-link.active {
-            color: white;
-            background: rgba(255,255,255,0.1);
-        }
-        
-        .nav-link i {
-            width: 20px;
-            height: 20px;
-            margin-right: 12px;
-            stroke-width: 2;
-        }
-        
-        /* Sidebar sections */
-        .nav-section {
-            margin: 1rem 0;
-        }
-        
-        .nav-section-title {
-            display: flex;
-            align-items: center;
-            padding: 0.5rem 1.5rem;
-            color: rgba(255,255,255,0.6);
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 0.5rem;
-        }
-        
-        .nav-section-title i {
-            width: 16px;
-            height: 16px;
-            margin-right: 8px;
-        }
-        
-        .schedule-item {
-            cursor: pointer;
-            position: relative;
-            justify-content: space-between;
-            transition: all 0.2s ease;
-        }
-        
-        .schedule-item:hover {
-            background: rgba(255,255,255,0.05);
-            transform: translateX(4px);
-        }
-        
-        .schedule-item.active {
-            background: rgba(255,255,255,0.15);
-            border-left: 3px solid #fff;
-        }
-        
-        .schedule-count {
-            background: rgba(255,255,255,0.2);
-            color: white;
-            font-size: 0.7rem;
-            padding: 0.2rem 0.5rem;
-            border-radius: 12px;
-            min-width: 20px;
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 20px;
+            margin-bottom: 30px;
             text-align: center;
-            font-weight: 600;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
         }
         
-        .schedule-count.permanent {
-            background: rgba(78, 115, 223, 0.8);
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 700;
         }
         
-        .schedule-count.temporary {
-            background: rgba(246, 194, 62, 0.8);
-        }
-        
-        .schedule-count.running {
-            background: rgba(28, 200, 138, 0.8);
-            animation: pulse 2s infinite;
-        }
-        
-        .schedule-count.cancelled {
-            background: rgba(231, 74, 59, 0.8);
-        }
-        
-        .room-item {
-            cursor: pointer;
-            font-size: 0.85rem;
-            padding: 0.5rem 1.5rem 0.5rem 2.5rem;
-        }
-        
-        .room-item:hover {
-            background: rgba(255,255,255,0.05);
-        }
-        
-        .room-item.active {
-            background: rgba(255,255,255,0.1);
-            color: white;
-        }
-        
-        /* Main content */
-        .main {
-            flex: 1;
-            margin-left: 280px;
-            background: #f8f9fa;
-        }
-        
-        .topbar {
-            background: white;
-            border-bottom: 1px solid #e3e6f0;
-            padding: 1rem 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-        
-        .topbar-title {
-            font-size: 1.75rem;
-            font-weight: 400;
-            color: #5a5c69;
-            margin: 0;
-        }
-        
-        .topbar-actions {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-        
-        .user-info {
-            display: flex;
-            align-items: center;
-            color: #6c757d;
-            font-size: 0.875rem;
-        }
-        
-        .avatar {
-            width: 32px;
-            height: 32px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: 600;
-            margin-left: 8px;
-        }
-        
-        .content {
-            padding: 1.5rem;
-        }
-        
-        /* Cards */
-        .card-row {
+        .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-        
-        .card {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-            border: 1px solid #e3e6f0;
-            position: relative;
-            display: flex;
-            flex-direction: column;
-            min-width: 0;
-        }
-        
-        .card-header {
-            padding: 1rem 1.5rem;
-            background: #f8f9fc;
-            border-bottom: 1px solid #e3e6f0;
-            border-radius: 8px 8px 0 0;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        
-        .card-title {
-            font-size: 1rem;
-            font-weight: 600;
-            color: #5a5c69;
-            margin: 0;
-            display: flex;
-            align-items: center;
-        }
-        
-        .card-title i {
-            margin-right: 8px;
-            width: 16px;
-            height: 16px;
-        }
-        
-        .card-body {
-            padding: 1.5rem;
-            flex: 1;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
         }
         
         .stat-card {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-            border-left: 4px solid #4e73df;
-            padding: 1.5rem;
-            display: flex;
-            align-items: center;
-            transition: all 0.3s;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #3498db, #2980b9);
         }
         
         .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 0.25rem 2rem 0 rgba(58, 59, 69, 0.2);
-        }
-        
-        .stat-card.success { border-left-color: #1cc88a; }
-        .stat-card.warning { border-left-color: #f6c23e; }
-        .stat-card.info { border-left-color: #36b9cc; }
-        .stat-card.danger { border-left-color: #e74a3b; }
-        
-        .stat-content {
-            flex: 1;
-        }
-        
-        .stat-label {
-            color: #5a5c69;
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            margin-bottom: 0.25rem;
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
         }
         
         .stat-number {
-            font-size: 2rem;
+            font-size: 2.2em;
             font-weight: 700;
-            color: #5a5c69;
+            color: #2c3e50;
+            margin-bottom: 8px;
         }
         
-        .stat-icon {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            display: flex;
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 1em;
+            font-weight: 500;
+        }
+        
+        .stat-sublabel {
+            color: #95a5a6;
+            font-size: 0.85em;
+            margin-top: 5px;
+        }
+        
+        .filters-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
             align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            margin-left: 1rem;
         }
         
-        .stat-icon.primary { background: rgba(78, 115, 223, 0.1); color: #4e73df; }
-        .stat-icon.success { background: rgba(28, 200, 138, 0.1); color: #1cc88a; }
-        .stat-icon.warning { background: rgba(246, 194, 62, 0.1); color: #f6c23e; }
-        .stat-icon.info { background: rgba(54, 185, 204, 0.1); color: #36b9cc; }
-        .stat-icon.danger { background: rgba(231, 74, 59, 0.1); color: #e74a3b; }
-        
-        /* Tables */
-        .table-responsive {
-            overflow-x: auto;
+        .filter-group {
+            display: flex;
+            flex-direction: column;
         }
         
-        .table {
+        .filter-group label {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+        
+        .filter-group select {
+            padding: 10px;
+            border: 2px solid #ecf0f1;
+            border-radius: 8px;
+            background: white;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+        
+        .filter-group select:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        
+        .apply-btn {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            align-self: end;
+        }
+        
+        .apply-btn:hover {
+            background: linear-gradient(135deg, #2980b9, #1f4e79);
+            transform: translateY(-2px);
+        }
+        
+        .content-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+        }
+        
+        .schedule-section, .power-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .section-title {
+            font-size: 1.8em;
+            color: #2c3e50;
+            margin-bottom: 25px;
+            font-weight: 600;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .day-header {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin: 20px 0 15px 0;
+            font-size: 1.3em;
+            font-weight: 600;
+        }
+        
+        .slot {
+            border: none;
+            margin: 10px 0;
+            padding: 20px;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .slot:hover {
+            transform: translateX(5px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        .temporary {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: white;
+        }
+        
+        .permanent {
+            background: linear-gradient(135deg, #27ae60, #229954);
+            color: white;
+        }
+        
+        .slot-time {
+            font-weight: 700;
+            font-size: 1.2em;
+            margin-bottom: 8px;
+        }
+        
+        .slot-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+            font-size: 0.95em;
+        }
+        
+        .power-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            margin: 10px 0;
+            background: linear-gradient(135deg, #ecf0f1, #d5dbdb);
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+        
+        .power-item:hover {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            transform: translateX(5px);
+        }
+        
+        .power-watts {
+            font-weight: 700;
+            font-size: 1.2em;
+        }
+        
+        .power-kwh {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+        
+        .power-high { 
+            background: linear-gradient(135deg, #e74c3c, #c0392b) !important; 
+            color: white; 
+            border-left-color: #c0392b;
+        }
+        .power-medium { 
+            background: linear-gradient(135deg, #f39c12, #e67e22) !important; 
+            color: white; 
+            border-left-color: #e67e22;
+        }
+        .power-low { 
+            background: linear-gradient(135deg, #27ae60, #229954) !important; 
+            color: white; 
+            border-left-color: #229954;
+        }
+        
+        .power-details-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 0;
-        }
-        
-        .table th,
-        .table td {
-            padding: 0.75rem;
-            vertical-align: top;
-            border-top: 1px solid #e3e6f0;
-            text-align: left;
-        }
-        
-        .table td[rowspan] {
-            background: #f8f9fc;
-            font-weight: 600;
-            vertical-align: middle;
-            text-align: center;
-        }
-        
-        .table thead th {
-            background: #f8f9fc;
-            border-bottom: 2px solid #e3e6f0;
-            border-top: 0;
-            font-weight: 700;
-            color: #5a5c69;
-            font-size: 0.875rem;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-        
-        .table tbody tr {
-            border-bottom: 1px solid #f0f0f0;
-        }
-        
-        .table tbody tr:last-child {
-            border-bottom: none;
-        }
-        
-        .table tbody tr:hover {
-            background: #f8f9fc;
-        }
-        
-        /* Schedule specific styles */
-        .schedule-slot {
-            padding: 0.75rem;
-            border-radius: 6px;
-            border-left: 4px solid;
+            margin-top: 20px;
             background: white;
-            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-            width: 100%;
-            margin: 0;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
         
-        .schedule-slot.temporary {
-            border-left-color: #f6c23e;
-            background: #fff9e6;
-        }
-        
-        .schedule-slot.permanent {
-            border-left-color: #4e73df;
-            background: #f0f4ff;
-        }
-        
-        .schedule-time {
-            font-weight: 700;
-            color: #2e59d9;
-            font-size: 0.875rem;
-            margin-bottom: 0.25rem;
-        }
-        
-        .schedule-room {
-            color: #5a5c69;
-            font-size: 0.75rem;
-            margin-bottom: 0.25rem;
-        }
-        
-        .schedule-subject {
-            color: #3d3d3d;
+        .power-details-table th {
+            background: linear-gradient(135deg, #34495e, #2c3e50);
+            color: white;
+            padding: 12px;
+            text-align: left;
             font-weight: 600;
-            font-size: 0.8rem;
-            margin-bottom: 0.25rem;
+            font-size: 0.9em;
         }
         
-        .schedule-teacher {
-            color: #858796;
-            font-size: 0.7rem;
+        .power-details-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 0.9em;
         }
         
-        .schedule-badge {
-            display: inline-block;
-            padding: 0.25rem 0.5rem;
-            font-size: 0.65rem;
-            font-weight: 700;
-            border-radius: 0.35rem;
-            text-transform: uppercase;
+        .power-details-table tr:hover {
+            background: #f8f9fa;
         }
         
-        .schedule-badge.temporary {
-            background: #f6c23e;
-            color: #8a6914;
-        }
-        
-        .schedule-badge.permanent {
-            background: #4e73df;
-            color: white;
-        }
-        
-        /* Buttons */
-        .btn {
-            display: inline-block;
-            padding: 0.5rem 1rem;
-            font-size: 0.875rem;
+        .kwh-value {
             font-weight: 600;
-            line-height: 1.5;
-            text-align: center;
-            vertical-align: middle;
-            cursor: pointer;
-            user-select: none;
-            border: 1px solid transparent;
-            border-radius: 0.35rem;
-            transition: all 0.15s ease-in-out;
-            text-decoration: none;
+            color: #27ae60;
         }
         
-        .btn-primary {
-            color: white;
-            background: #4e73df;
-            border-color: #4e73df;
-        }
-        
-        .btn-primary:hover {
-            background: #2e59d9;
-            border-color: #2653d4;
-        }
-        
-        .btn-success {
-            color: white;
-            background: #1cc88a;
-            border-color: #1cc88a;
-        }
-        
-        .btn-success:hover {
-            background: #17a673;
-            border-color: #169b6b;
-        }
-        
-        .btn-warning {
-            color: #fff;
-            background: #f6c23e;
-            border-color: #f6c23e;
-        }
-        
-        .btn-warning:hover {
-            background: #f4b619;
-            border-color: #f4b30d;
-        }
-        
-        .btn-sm {
-            padding: 0.375rem 0.75rem;
-            font-size: 0.75rem;
-        }
-        
-        /* Status indicators */
-        .status-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-size: 0.875rem;
+        .power-value {
             font-weight: 600;
         }
         
-        .status-indicator.connected {
-            background: rgba(28, 200, 138, 0.1);
-            color: #1cc88a;
-            border: 1px solid rgba(28, 200, 138, 0.2);
+        .timestamp {
+            color: #7f8c8d;
+            font-size: 0.85em;
         }
         
-        .status-indicator.disconnected {
-            background: rgba(231, 74, 59, 0.1);
-            color: #e74a3b;
-            border: 1px solid rgba(231, 74, 59, 0.2);
-        }
-        
-        .status-indicator.unknown {
-            background: rgba(133, 135, 150, 0.1);
-            color: #858796;
-            border: 1px solid rgba(133, 135, 150, 0.2);
-        }
-        
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            animation: pulse 2s infinite;
-        }
-        
-        .status-dot.connected { background: #1cc88a; }
-        .status-dot.disconnected { background: #e74a3b; }
-        .status-dot.unknown { background: #858796; }
-        
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-        
-        /* Empty state */
-        .empty-state {
-            text-align: center;
-            padding: 3rem 1.5rem;
-            color: #858796;
-        }
-        
-        .empty-state i {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            opacity: 0.5;
-        }
-        
-        .empty-state h3 {
-            margin-bottom: 0.5rem;
-            color: #5a5c69;
-        }
-        
-        /* Responsive */
         @media (max-width: 768px) {
-            .sidebar {
-                margin-left: -280px;
-                transition: margin-left 0.3s;
+            .content-grid {
+                grid-template-columns: 1fr;
             }
             
-            .main {
-                margin-left: 0;
-            }
-            
-            .card-row {
+            .slot-info {
                 grid-template-columns: 1fr;
             }
         }
     </style>
 </head>
 <body>
-    <div class="wrapper">
-        <!-- Sidebar -->
-        <nav class="sidebar">
-            <a class="sidebar-brand" href="/">
-                <div class="brand-icon">
-                    📊
-                </div>
-                <span>SchedulerDashboard</span>
-            </a>
-            
-            <div class="sidebar-nav">
-                <div class="nav-item">
-                    <a class="nav-link active" href="/" id="dashboard-link">
-                        <i data-feather="home"></i>
-                        <span>Dashboard</span>
-                    </a>
-                </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">
-                        <i data-feather="calendar"></i>
-                        <span>Schedules</span>
-                    </div>
-                    
-                    <div class="nav-item" id="schedule-nav-items">
-                        <div class="nav-link schedule-item" data-filter="all">
-                            <i data-feather="grid"></i>
-                            <span>All Schedules</span>
-                            <span class="schedule-count" id="all-count">0</span>
-                        </div>
-                        
-                        <div class="nav-link schedule-item" data-filter="permanent">
-                            <i data-feather="anchor"></i>
-                            <span>Permanent</span>
-                            <span class="schedule-count permanent" id="permanent-count">0</span>
-                        </div>
-                        
-                        <div class="nav-link schedule-item" data-filter="temporary">
-                            <i data-feather="clock"></i>
-                            <span>Temporary</span>
-                            <span class="schedule-count temporary" id="temporary-count">0</span>
-                        </div>
-                        
-                        <div class="nav-link schedule-item" data-filter="running">
-                            <i data-feather="activity"></i>
-                            <span>Running</span>
-                            <span class="schedule-count running" id="running-count">0</span>
-                        </div>
-                        
-                        <div class="nav-link schedule-item" data-filter="cancelled">
-                            <i data-feather="x-circle"></i>
-                            <span>Cancelled</span>
-                            <span class="schedule-count cancelled" id="cancelled-count">0</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">
-                        <i data-feather="map-pin"></i>
-                        <span>Rooms</span>
-                    </div>
-                    <div class="nav-item" id="room-nav-items">
-                        <!-- Room items will be populated dynamically -->
-                    </div>
-                </div>
-                
-                <div class="nav-section">
-                    <div class="nav-section-title">
-                        <i data-feather="zap"></i>
-                        <span>Power Usage</span>
-                    </div>
-                    
-                    <div class="nav-item">
-                        <a class="nav-link" href="/power-usage" id="power-usage-link">
-                            <i data-feather="bar-chart-2"></i>
-                            <span>Usage Report</span>
-                        </a>
-                    </div>
-                </div>
-
-                <div class="nav-section">
-                    <div class="nav-section-title">
-                        <i data-feather="settings"></i>
-                        <span>Debug</span>
-                    </div>
-                    
-                    <div class="nav-item">
-                        <a class="nav-link" href="/debug/mqtt" id="mqtt-debug-link">
-                            <i data-feather="activity"></i>
-                            <span>MQTT Messages</span>
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </nav>
+    <div class="container">
+        <div class="header">
+            <h1>🏫 Smart Schedule & Power Dashboard</h1>
+            <p>Real-time schedule management and power monitoring system</p>
+        </div>
         
-        <!-- Main content -->
-        <main class="main">
-            <div class="topbar">
-                <h1 class="topbar-title">Scheduler Dashboard</h1>
-                <div class="topbar-actions">
-                    <div class="user-info">
-                        <span>Database: <%= dbInfo %></span>
-                        <div class="avatar">DB</div>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number"><%= stats.permanentSchedules %></div>
+                <div class="stat-label">Permanent Schedules</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number"><%= stats.temporarySchedules %></div>
+                <div class="stat-label">Temporary Schedules</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number"><%= stats.totalSlots %></div>
+                <div class="stat-label">Total Schedule Slots</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number"><%= stats.activePowerMonitors %></div>
+                <div class="stat-label">Active Power Monitors</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number"><%= (stats.totalKwh || 0).toFixed(2) %></div>
+                <div class="stat-label">Total kWh</div>
+                <div class="stat-sublabel"><%= dateDescription %></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number"><%= Math.round(stats.avgPowerConsumption || 0) %>W</div>
+                <div class="stat-label">Avg Power Usage</div>
+                <div class="stat-sublabel">All Rooms</div>
+            </div>
+        </div>
+        
+        <!-- Filters Section -->
+        <div class="filters-section">
+            <form method="GET" action="/">
+                <div class="filters-grid">
+                    <div class="filter-group">
+                        <label for="room">Filter by Room:</label>
+                        <select name="room" id="room">
+                            <option value="all" <%= selectedRoom === 'all' ? 'selected' : '' %>>All Rooms</option>
+                            <% availableRooms.forEach(room => { %>
+                                <option value="<%= room %>" <%= selectedRoom === room ? 'selected' : '' %>><%= room %></option>
+                            <% }); %>
+                        </select>
                     </div>
+                    
+                    <div class="filter-group">
+                        <label for="dateRange">Date Range:</label>
+                        <select name="dateRange" id="dateRange">
+                            <option value="1h" <%= dateRange === '1h' ? 'selected' : '' %>>Last Hour</option>
+                            <option value="24h" <%= dateRange === '24h' ? 'selected' : '' %>>Last 24 Hours</option>
+                            <option value="7d" <%= dateRange === '7d' ? 'selected' : '' %>>Last 7 Days</option>
+                            <option value="30d" <%= dateRange === '30d' ? 'selected' : '' %>>Last 30 Days</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="sortBy">Sort by:</label>
+                        <select name="sortBy" id="sortBy">
+                            <option value="timestamp" <%= sortBy === 'timestamp' ? 'selected' : '' %>>Time</option>
+                            <option value="room" <%= sortBy === 'room' ? 'selected' : '' %>>Room</option>
+                            <option value="power" <%= sortBy === 'power' ? 'selected' : '' %>>Power Usage</option>
+                            <option value="kwh" <%= sortBy === 'kwh' ? 'selected' : '' %>>kWh Usage</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="sortOrder">Order:</label>
+                        <select name="sortOrder" id="sortOrder">
+                            <option value="desc" <%= sortOrder === 'desc' ? 'selected' : '' %>>Descending</option>
+                            <option value="asc" <%= sortOrder === 'asc' ? 'selected' : '' %>>Ascending</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="apply-btn">Apply Filters</button>
                 </div>
+            </form>
+        </div>
+        
+        <div class="content-grid">
+            <div class="schedule-section">
+                <h2 class="section-title">📅 Weekly Schedule</h2>
+                
+                <% const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; %>
+                <% dayOrder.forEach(day => { %>
+                    <div class="day-header">📅 <%= day %></div>
+                    
+                    <% if (scheduleByDay[day] && scheduleByDay[day].length > 0) { %>
+                        <% scheduleByDay[day].forEach(slot => { %>
+                            <div class="<%= slot.is_temporary ? 'slot temporary' : 'slot permanent' %>">
+                                <div class="slot-time">
+                                    <%= slot.is_temporary ? '⚡' : '📋' %> <%= slot.start_time %> - <%= slot.end_time %>
+                                </div>
+                                <div class="slot-info">
+                                    <div>🏢 Room: <%= slot.room_id %></div>
+                                    <div>📚 <%= slot.subject %></div>
+                                    <div>👨‍🏫 <%= slot.teacher %></div>
+                                    <div><%= slot.teacher_email ? `📧 ${slot.teacher_email}` : '' %></div>
+                                </div>
+                            </div>
+                        <% }); %>
+                    <% } else { %>
+                        <p style="margin: 15px 0; color: #7f8c8d; font-style: italic;">No scheduled classes</p>
+                    <% } %>
+                <% }); %>
             </div>
             
-            <div class="content">
-                <!-- Stats Cards -->
-                <div class="card-row">
-                    <div class="stat-card">
-                        <div class="stat-content">
-                            <div class="stat-label">Total Schedules</div>
-                            <div class="stat-number"><%= scheduleStats.totalSchedules %></div>
-                        </div>
-                        <div class="stat-icon primary">
-                            <i data-feather="calendar"></i>
-                        </div>
-                    </div>
-                    
-                    <div class="stat-card success">
-                        <div class="stat-content">
-                            <div class="stat-label">Schedule Slots</div>
-                            <div class="stat-number"><%= scheduleStats.totalSlots %></div>
-                        </div>
-                        <div class="stat-icon success">
-                            <i data-feather="clock"></i>
-                        </div>
-                    </div>
-                    
-                    <div class="stat-card warning">
-                        <div class="stat-content">
-                            <div class="stat-label">Temporary Slots</div>
-                            <div class="stat-number"><%= scheduleStats.tempSchedules %></div>
-                        </div>
-                        <div class="stat-icon warning">
-                            <i data-feather="alert-circle"></i>
-                        </div>
-                    </div>
-                    
-                    <div class="stat-card success">
-                        <div class="stat-content">
-                            <div class="stat-label">Running Jobs</div>
-                            <div class="stat-number" data-stat="running"><%= scheduleStats.runningJobs || 0 %></div>
-                        </div>
-                        <div class="stat-icon success">
-                            <i data-feather="activity"></i>
-                        </div>
-                    </div>
-                    
-                    <div class="stat-card danger">
-                        <div class="stat-content">
-                            <div class="stat-label">Cancelled Slots</div>
-                            <div class="stat-number" data-stat="cancelled"><%= scheduleStats.cancelledSlots || 0 %></div>
-                        </div>
-                        <div class="stat-icon danger">
-                            <i data-feather="x-circle"></i>
-                        </div>
-                    </div>
-                    
-                    <div class="stat-card info" id="bridgeStatusCard">
-                        <div class="stat-content">
-                            <div class="stat-label">MQTT Bridge</div>
-                            <div class="stat-number" id="bridgeStatusText">Loading...</div>
-                        </div>
-                        <div class="stat-icon info" id="bridgeStatusIndicator">
-                            <i data-feather="activity"></i>
-                        </div>
-                    </div>
-                </div>
+            <div class="power-section">
+                <h2 class="section-title">⚡ Power Usage - <%= dateDescription %></h2>
                 
-                <!-- Weekly Schedule with Status -->
-                <div class="card-row">
-                    <div class="card" style="grid-column: span 3;">
-                        <div class="card-header">
-                            <h5 class="card-title">
-                                <i data-feather="calendar"></i>
-                                Weekly Schedule Status Monitor
-                            </h5>
-                            <div style="margin-left: auto; display: flex; gap: 0.5rem;">
-                                <button class="btn btn-primary btn-sm" onclick="window.location.reload()">
-                                    <i data-feather="refresh-cw" style="width: 14px; height: 14px; margin-right: 4px;"></i>
-                                    Refresh
-                                </button>
-                                <span class="badge" style="background: #1cc88a; color: white; padding: 0.5rem 1rem; border-radius: 0.35rem; font-size: 0.75rem;">
-                                    READ-ONLY
-                                </span>
+                <!-- Summary Cards -->
+                <h3 style="margin-bottom: 15px; color: #2c3e50;">📊 Room Summary</h3>
+                <% if (summaryPowerData.length === 0) { %>
+                    <p style="color: #7f8c8d; font-style: italic;">No power usage data for selected filters</p>
+                <% } else { %>
+                    <% summaryPowerData.forEach(power => { %>
+                        <% 
+                            const avgWatts = Math.round(power.avg_watts);
+                            const maxWatts = Math.round(power.max_watts);
+                            const totalKwh = parseFloat(power.total_kwh) || 0;
+                            let powerClass = 'power-low';
+                            if (avgWatts > 1000) powerClass = 'power-high';
+                            else if (avgWatts > 500) powerClass = 'power-medium';
+                            
+                            const lastReading = new Date(power.last_reading).toLocaleString();
+                        %>
+                        <div class="power-item <%= powerClass %>">
+                            <div>
+                                <div style="font-weight: 600;">🏢 <%= power.room_id %></div>
+                                <div style="font-size: 0.9em;">Last: <%= lastReading %></div>
+                                <div class="power-kwh">📈 <%= power.reading_count %> readings</div>
+                            </div>
+                            <div>
+                                <div class="power-watts"><%= avgWatts %>W avg</div>
+                                <div class="power-kwh"><%= totalKwh.toFixed(3) %> kWh</div>
+                                <div style="font-size: 0.8em;">Max: <%= maxWatts %>W</div>
                             </div>
                         </div>
-                        <div class="card-body">
-                            <% if (Object.keys(weeklySchedule).every(day => weeklySchedule[day].length === 0)) { %>
-                                <div class="empty-state">
-                                    <i data-feather="calendar" style="width: 64px; height: 64px; opacity: 0.3;"></i>
-                                    <h3>No schedules found</h3>
-                                    <p>No schedule slots are currently in the database.</p>
-                                </div>
-                            <% } else { %>
-                                <div class="table-responsive">
-                                    <table class="table">
-                                        <thead>
-                                            <tr>
-                                                <th style="width: 20%;">Day</th>
-                                                <th style="width: 55%;">Schedule Slots</th>
-                                                <th style="width: 25%;">Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <% ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].forEach(day => { %>
-                                                <% if (weeklySchedule[day] && weeklySchedule[day].length > 0) { %>
-                                                    <% weeklySchedule[day].forEach((slot, slotIndex) => { %>
-                                                        <tr>
-                                                            <% if (slotIndex === 0) { %>
-                                                                <td rowspan="<%= weeklySchedule[day].length %>" style="vertical-align: top; border-right: 2px solid #e3e6f0;">
-                                                                    <strong><%= day %></strong>
-                                                                </td>
-                                                            <% } %>
-                                                            <td>
-                                                                <div class="schedule-slot <%= slot.is_temporary ? 'temporary' : 'permanent' %>" data-timeslot-id="<%= slot.timeslot_id || '' %>">
-                                                                    <div class="schedule-time">
-                                                                        <%= slot.start_time %> - <%= slot.end_time %>
-                                                                    </div>
-                                                                    <div class="schedule-room">
-                                                                        <i data-feather="map-pin" style="width: 12px; height: 12px; margin-right: 4px;"></i>
-                                                                        Room <%= slot.room_id %>
-                                                                    </div>
-                                                                    <% if (slot.subject) { %>
-                                                                        <div class="schedule-subject">
-                                                                            <i data-feather="book" style="width: 12px; height: 12px; margin-right: 4px;"></i>
-                                                                            <%= slot.subject %>
-                                                                        </div>
-                                                                    <% } %>
-                                                                    <% if (slot.teacher) { %>
-                                                                        <div class="schedule-teacher">
-                                                                            <i data-feather="user" style="width: 12px; height: 12px; margin-right: 4px;"></i>
-                                                                            <%= slot.teacher %>
-                                                                        </div>
-                                                                    <% } %>
-                                                                    <% if (slot.is_temporary) { %>
-                                                                        <span class="schedule-badge temporary">Temporary</span>
-                                                                    <% } else { %>
-                                                                        <span class="schedule-badge permanent">Permanent</span>
-                                                                    <% } %>
-                                                                </div>
-                                                            </td>
-                                                            <td>
-                                                                <div style="display: flex; align-items: center; justify-content: center;">
-                                                                    <% if (slot.timeslot_id && runningJobs[slot.timeslot_id]) { %>
-                                                                        <span class="status-indicator connected" style="font-size: 0.75rem; padding: 0.375rem 0.75rem;">
-                                                                            <div class="status-dot connected" style="animation: pulse 1.5s infinite;"></div>
-                                                                            RUNNING
-                                                                        </span>
-                                                                    <% } else if (slot.timeslot_id && cancelledSchedules[slot.timeslot_id]) { %>
-                                                                        <span class="status-indicator disconnected" style="font-size: 0.75rem; padding: 0.375rem 0.75rem;">
-                                                                            <i data-feather="x-circle" style="width: 12px; height: 12px;"></i>
-                                                                            CANCELLED
-                                                                        </span>
-                                                                    <% } else { %>
-                                                                        <span class="status-indicator unknown" style="font-size: 0.75rem; padding: 0.375rem 0.75rem;">
-                                                                            <i data-feather="clock" style="width: 12px; height: 12px;"></i>
-                                                                            SCHEDULED
-                                                                        </span>
-                                                                    <% } %>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    <% }); %>
-                                                <% } else { %>
-                                                    <tr>
-                                                        <td><strong><%= day %></strong></td>
-                                                        <td><span class="text-muted">No scheduled slots</span></td>
-                                                        <td></td>
-                                                    </tr>
-                                                <% } %>
-                                            <% }); %>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            <% } %>
-                        </div>
-                    </div>
-                </div>
+                    <% }); %>
+                <% } %>
                 
-                <!-- Room Group Summary -->
-                <% if (Object.keys(roomGroups).length > 0) { %>
-                <div class="card-row">
-                    <div class="card" style="grid-column: span 3;">
-                        <div class="card-header">
-                            <h5 class="card-title">
-                                <i data-feather="grid"></i>
-                                Room Status Overview
-                            </h5>
+                <!-- Live Readings -->
+                <h3 style="margin-top: 30px; margin-bottom: 15px; color: #2c3e50;">🔴 Live Readings</h3>
+                <% const liveRooms = Object.keys(latestPowerReadings); %>
+                <% if (liveRooms.length === 0) { %>
+                    <p style="color: #7f8c8d; font-style: italic;">No live readings available</p>
+                <% } else { %>
+                    <% liveRooms.forEach(roomId => { %>
+                        <% 
+                            const reading = latestPowerReadings[roomId];
+                            const watts = reading.watts;
+                            let powerClass = 'power-low';
+                            if (watts > 1000) powerClass = 'power-high';
+                            else if (watts > 500) powerClass = 'power-medium';
+                            
+                            const timeAgo = Math.round((Date.now() - reading.timestamp.getTime()) / 1000);
+                        %>
+                        <div class="power-item <%= powerClass %>">
+                            <div>
+                                <div style="font-weight: 600;">📡 <%= roomId %></div>
+                                <div style="font-size: 0.9em;"><%= timeAgo %>s ago</div>
+                            </div>
+                            <div class="power-watts"><%= watts %>W</div>
                         </div>
-                        <div class="card-body">
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
-                                <% Object.keys(roomGroups).forEach(roomId => { %>
-                                    <div class="stat-card" style="padding: 1rem;">
-                                        <div class="stat-content">
-                                            <div class="stat-label">Room <%= roomId %></div>
-                                            <div style="font-size: 0.875rem; color: #5a5c69; margin-top: 0.5rem;">
-                                                <div><strong>Total Slots:</strong> <%= roomGroups[roomId].length %></div>
-                                                <div><strong>Running:</strong> 
-                                                    <% let runningCount = 0; %>
-                                                    <% roomGroups[roomId].forEach(slot => { %>
-                                                        <% if (slot.timeslot_id && runningJobs[slot.timeslot_id]) runningCount += 1; %>
-                                                    <% }); %>
-                                                    <span style="color: #1cc88a; font-weight: 600;"><%= runningCount %></span>
-                                                </div>
-                                                <div><strong>Cancelled:</strong> 
-                                                    <% let cancelledCount = 0; %>
-                                                    <% roomGroups[roomId].forEach(slot => { %>
-                                                        <% if (slot.timeslot_id && cancelledSchedules[slot.timeslot_id]) cancelledCount += 1; %>
-                                                    <% }); %>
-                                                    <span style="color: #e74a3b; font-weight: 600;"><%= cancelledCount %></span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="stat-icon primary">
-                                            <i data-feather="home"></i>
-                                        </div>
-                                    </div>
+                    <% }); %>
+                <% } %>
+                
+                <!-- Detailed Table -->
+                <% if (detailedPowerData.length > 0) { %>
+                    <h3 style="margin-top: 30px; margin-bottom: 15px; color: #2c3e50;">📋 Detailed Readings</h3>
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <table class="power-details-table">
+                            <thead>
+                                <tr>
+                                    <th>Room</th>
+                                    <th>Timestamp</th>
+                                    <th>Power (W)</th>
+                                    <th>Energy (kWh)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% detailedPowerData.slice(0, 100).forEach(reading => { %>
+                                    <% 
+                                        const kwh = parseFloat(reading.kwh_consumed) || 0;
+                                        const timestamp = new Date(reading.timestamp).toLocaleString();
+                                    %>
+                                    <tr>
+                                        <td><strong><%= reading.room_id %></strong></td>
+                                        <td class="timestamp"><%= timestamp %></td>
+                                        <td class="power-value"><%= reading.power_watts %>W</td>
+                                        <td class="kwh-value"><%= kwh.toFixed(4) %></td>
+                                    </tr>
                                 <% }); %>
-                            </div>
-                        </div>
+                            </tbody>
+                        </table>
                     </div>
-                </div>
+                    <% if (detailedPowerData.length > 100) { %>
+                        <p style="text-align: center; margin-top: 10px; color: #7f8c8d; font-style: italic;">
+                            Showing first 100 of <%= detailedPowerData.length %> readings
+                        </p>
+                    <% } %>
                 <% } %>
             </div>
-        </main>
+        </div>
     </div>
-
-    <!-- Feather Icons Script -->
-    <script src="https://unpkg.com/feather-icons"></script>
+    
     <script>
-        // Initialize Feather icons
-        feather.replace();
-    </script>
-    <script>
-        // Bridge status monitoring
-        async function updateBridgeStatus() {
-            try {
-                const response = await fetch('/api/bridge-status');
-                const bridgeData = await response.json();
-                
-                const bridge = bridgeData.mosquitto_local_test;
-                const statusCard = document.getElementById('bridgeStatusCard');
-                const statusText = document.getElementById('bridgeStatusText');
-                
-                if (bridge) {
-                    // Update status card with AdminKit colors
-                    if (bridge.connected) {
-                        statusText.innerHTML = 'Connected';
-                        statusCard.classList.remove('info', 'danger');
-                        statusCard.classList.add('success');
-                    } else if (bridge.state === 'disconnected') {
-                        statusText.innerHTML = 'Disconnected';
-                        statusCard.classList.remove('info', 'success');
-                        statusCard.classList.add('danger');
-                    } else {
-                        statusText.innerHTML = bridge.state || 'Unknown';
-                        statusCard.classList.remove('success', 'danger');
-                        statusCard.classList.add('info');
-                    }
-                } else {
-                    statusText.innerHTML = 'No Data';
-                    statusCard.classList.remove('success', 'danger');
-                    statusCard.classList.add('info');
-                }
-                
-            } catch (error) {
-                console.error('Error fetching bridge status:', error);
-                if (statusText) statusText.innerHTML = 'Error';
-                if (statusCard) {
-                    statusCard.classList.remove('success', 'info');
-                    statusCard.classList.add('danger');
-                }
-            }
-        }
-        
-        // Update bridge status every 5 seconds
-        updateBridgeStatus();
-        setInterval(updateBridgeStatus, 5000);
-
-        // Auto-refresh schedule status
-        async function refreshScheduleStatus() {
-            try {
-                const response = await fetch('/api/schedule-status');
-                const data = await response.json();
-                
-                // Update status indicators for each schedule slot
-                updateStatusIndicators(data.runningJobs, data.cancelledSchedules);
-                
-                // Update statistics if needed
-                updateStatistics(data);
-                
-                // Update sidebar counts
-                updateSidebarCounts(data);
-                
-                // Update room list
-                updateRoomList(data.weeklySchedule);
-                
-            } catch (error) {
-                console.error('Error refreshing schedule status:', error);
-            }
-        }
-
-        // Update sidebar schedule counts
-        function updateSidebarCounts(data) {
-            const weeklySchedule = data.weeklySchedule || {};
-            const runningJobs = data.runningJobs || {};
-            const cancelledSchedules = data.cancelledSchedules || {};
-            
-            let totalSlots = 0;
-            let permanentSlots = 0;
-            let temporarySlots = 0;
-            let runningCount = 0;
-            let cancelledCount = 0;
-            
-            // Count all slots
-            Object.values(weeklySchedule).forEach(daySchedules => {
-                if (Array.isArray(daySchedules)) {
-                    daySchedules.forEach(slot => {
-                        totalSlots++;
-                        if (slot.is_temporary) {
-                            temporarySlots++;
-                        } else {
-                            permanentSlots++;
-                        }
-                        
-                        if (slot.timeslot_id) {
-                            if (runningJobs[slot.timeslot_id]) {
-                                runningCount++;
-                            }
-                            if (cancelledSchedules[slot.timeslot_id]) {
-                                cancelledCount++;
-                            }
-                        }
-                    });
-                }
-            });
-            
-            // Update counts in sidebar
-            document.getElementById('all-count').textContent = totalSlots;
-            document.getElementById('permanent-count').textContent = permanentSlots;
-            document.getElementById('temporary-count').textContent = temporarySlots;
-            document.getElementById('running-count').textContent = runningCount;
-            document.getElementById('cancelled-count').textContent = cancelledCount;
-        }
-
-        // Update room list in sidebar
-        function updateRoomList(weeklySchedule) {
-            const roomContainer = document.getElementById('room-nav-items');
-            const rooms = new Set();
-            
-            // Collect all rooms
-            Object.values(weeklySchedule || {}).forEach(daySchedules => {
-                if (Array.isArray(daySchedules)) {
-                    daySchedules.forEach(slot => {
-                        if (slot.room_id) {
-                            rooms.add(slot.room_id);
-                        }
-                    });
-                }
-            });
-            
-            // Clear existing room items
-            roomContainer.innerHTML = '';
-            
-            // Add room items
-            Array.from(rooms).sort().forEach(roomId => {
-                const roomItem = document.createElement('div');
-                roomItem.className = 'nav-link room-item';
-                roomItem.setAttribute('data-room', roomId);
-                roomItem.innerHTML = `
-                    <i data-feather="home" style="width: 16px; height: 16px; margin-right: 8px;"></i>
-                    <span>Room ${roomId}</span>
-                `;
-                roomItem.addEventListener('click', () => filterByRoom(roomId));
-                roomContainer.appendChild(roomItem);
-            });
-            
-            // Re-apply feather icons
-            feather.replace();
-        }
-
-        // Update status indicators without full page reload
-        function updateStatusIndicators(runningJobs, cancelledSchedules) {
-            // Find all schedule slots with timeslot_id
-            const scheduleSlots = document.querySelectorAll('.schedule-slot[data-timeslot-id]');
-            
-            scheduleSlots.forEach(slotElement => {
-                const timeslotId = slotElement.getAttribute('data-timeslot-id');
-                if (!timeslotId) return;
-                
-                // Find the corresponding status indicator in the same row
-                const row = slotElement.closest('tr');
-                if (!row) return;
-                
-                const statusCell = row.querySelector('td:last-child');
-                if (!statusCell) return;
-                
-                const statusIndicator = statusCell.querySelector('.status-indicator');
-                if (statusIndicator) {
-                    // Determine status based on timeslot_id
-                    let foundStatus = 'scheduled';
-                    
-                    if (runningJobs[timeslotId]) {
-                        foundStatus = 'running';
-                    } else if (cancelledSchedules[timeslotId]) {
-                        foundStatus = 'cancelled';
-                    }
-                    
-                    // Update the status indicator
-                    statusIndicator.className = 'status-indicator';
-                    
-                    if (foundStatus === 'running') {
-                        statusIndicator.classList.add('connected');
-                        statusIndicator.innerHTML = '<div class="status-dot connected" style="animation: pulse 1.5s infinite;"></div>RUNNING';
-                    } else if (foundStatus === 'cancelled') {
-                        statusIndicator.classList.add('disconnected');
-                        statusIndicator.innerHTML = '<i data-feather="x-circle" style="width: 12px; height: 12px;"></i>CANCELLED';
-                    } else {
-                        statusIndicator.classList.add('unknown');
-                        statusIndicator.innerHTML = '<i data-feather="clock" style="width: 12px; height: 12px;"></i>SCHEDULED';
-                    }
-                    
-                    // Re-apply feather icons
-                    feather.replace();
-                }
-            });
-        }
-
-        // Update statistics cards
-        function updateStatistics(data) {
-            // Count running and cancelled jobs
-            const runningCount = Object.keys(data.runningJobs).length;
-            const cancelledCount = Object.keys(data.cancelledSchedules).length;
-            
-            // Update the statistics if elements exist
-            const runningElement = document.querySelector('[data-stat="running"]');
-            const cancelledElement = document.querySelector('[data-stat="cancelled"]');
-            
-            if (runningElement) runningElement.textContent = runningCount;
-            if (cancelledElement) cancelledElement.textContent = cancelledCount;
-        }
-
-        // Listen for changes in schedule wrapper/resolved slots (every 10 seconds)
-        // This will update status indicators without full page reload
-        setInterval(refreshScheduleStatus, 10000);
-
-        // Add visual feedback for running jobs (pulsing animation)
-        function enhanceStatusIndicators() {
-            const runningIndicators = document.querySelectorAll('.status-indicator.connected');
-            runningIndicators.forEach(indicator => {
-                indicator.style.animation = 'pulse 2s infinite';
-            });
-        }
-
-        // Schedule filtering functionality
-        let currentFilter = 'all';
-        let currentRoom = null;
-
-        function applyFilters() {
-            const allRows = document.querySelectorAll('tbody tr');
-            
-            allRows.forEach(row => {
-                const scheduleSlots = row.querySelectorAll('.schedule-slot');
-                let showRow = false;
-                
-                scheduleSlots.forEach(slot => {
-                    let showSlot = true;
-                    
-                    // Apply schedule type filter
-                    if (currentFilter !== 'all') {
-                        if (currentFilter === 'permanent' && slot.classList.contains('temporary')) {
-                            showSlot = false;
-                        } else if (currentFilter === 'temporary' && !slot.classList.contains('temporary')) {
-                            showSlot = false;
-                        } else if (currentFilter === 'running') {
-                            const statusRow = row.querySelector('.status-indicator.connected');
-                            if (!statusRow) showSlot = false;
-                        } else if (currentFilter === 'cancelled') {
-                            const statusRow = row.querySelector('.status-indicator.disconnected');
-                            if (!statusRow) showSlot = false;
-                        }
-                    }
-                    
-                    // Apply room filter
-                    if (currentRoom) {
-                        const roomText = slot.querySelector('.schedule-room');
-                        if (!roomText || !roomText.textContent.includes(currentRoom)) {
-                            showSlot = false;
-                        }
-                    }
-                    
-                    // Show/hide slot
-                    slot.style.display = showSlot ? 'block' : 'none';
-                    if (showSlot) showRow = true;
-                });
-                
-                // Show/hide entire row
-                row.style.display = showRow ? 'table-row' : 'none';
-            });
-        }
-
-        function filterByScheduleType(filterType) {
-            currentFilter = filterType;
-            
-            // Update active state in sidebar
-            document.querySelectorAll('.schedule-item').forEach(item => {
-                item.classList.remove('active');
-            });
-            document.querySelector(`[data-filter="${filterType}"]`).classList.add('active');
-            
-            applyFilters();
-        }
-
-        function filterByRoom(roomId) {
-            currentRoom = currentRoom === roomId ? null : roomId;
-            
-            // Update active state in sidebar
-            document.querySelectorAll('.room-item').forEach(item => {
-                item.classList.remove('active');
-            });
-            
-            if (currentRoom) {
-                document.querySelector(`[data-room="${roomId}"]`).classList.add('active');
-            }
-            
-            applyFilters();
-        }
-
-        // Initialize sidebar interactions
-        function initializeSidebar() {
-            // Schedule filter clicks
-            document.querySelectorAll('.schedule-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    const filter = item.getAttribute('data-filter');
-                    filterByScheduleType(filter);
-                });
-            });
-            
-            // Set default active filter
-            document.querySelector('[data-filter="all"]').classList.add('active');
-        }
-
-        // Apply enhancements after page load
-        document.addEventListener('DOMContentLoaded', function() {
-            enhanceStatusIndicators();
-            initializeSidebar();
-            
-            // Initial data load
-            refreshScheduleStatus();
-        });
+        // Auto-refresh every 30 seconds
+        setTimeout(() => {
+            location.reload();
+        }, 30000);
     </script>
 </body>
 </html>

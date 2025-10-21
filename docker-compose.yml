@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: dashboard_container
     ports:
-      - "8081:8080" # web dashboard accessible at http://localhost:8080
+      - "80:8080" # web dashboard accessible at http://localhost:8080
     networks:
       - default
       - shared_test_network_mqtt
@@ -13,7 +13,7 @@ services:
       - ./dashboard:/app
     depends_on:
       - mosquitto_rpi
-    command: ["node", "dist/index.js"]
+    command: ["sleep", "infinity"]
   postgres:
     image: timescale/timescaledb:latest-pg17
     container_name: postgres_db
@@ -30,19 +30,6 @@ services:
       - ./postgres/postgres_data:/var/lib/postgresql/data  # Data storage volume
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf  # Mount the custom config file
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]  # Use the custom config
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: "admin@admin.com"
-      PGADMIN_DEFAULT_PASSWORD: "admin"
-    networks:
-      - shared_test_network_mqtt
-      - default
-    ports:
-      - "8081:80"
-    depends_on:
-      - postgres
   mosquitto_rpi:
     image: eclipse-mosquitto
     container_name: mosquitto_broker

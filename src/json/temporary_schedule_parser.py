@@ -68,7 +68,7 @@ def convert_temp_schedule_to_orm(temp_schedule: TemporaryScheduleJson) -> tuple[
         timeslot_id=temp_schedule.timeslot_id,
         schedule_id=schedule_id,
         room_id=temp_schedule.room_id,
-        day_name=temp_schedule.day_name,
+        day_name=temp_schedule.day_name.lower().capitalize(),  # Normalize day name to proper case (e.g., "TUESDAY" -> "Tuesday")
         day_order=temp_schedule.day_order,
         start_time=f"{temp_schedule.start_hour:02d}:{temp_schedule.start_minute:02d}",
         end_time=f"{temp_schedule.end_hour:02d}:{temp_schedule.end_minute:02d}",
