@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Schedule Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .layout {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        .sidebar {
+            width: 250px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .sidebar h2 {
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-size: 1.5em;
+        }
+        
+        .nav-menu {
+            list-style: none;
+        }
+        
+        .nav-menu li {
+            margin-bottom: 10px;
+        }
+        
+        .nav-menu a {
+            display: block;
+            padding: 15px 20px;
+            color: #2c3e50;
+            text-decoration: none;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+        
+        .nav-menu a:hover {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            transform: translateX(5px);
+        }
+        
+        .nav-menu a.active {
+            background: linear-gradient(135deg, #27ae60, #229954);
+            color: white;
+        }
+        
+        .main-content {
+            flex: 1;
+            padding: 20px;
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 20px;
+            margin-bottom: 30px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 1.1em;
+        }
+        
+        .schedule-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .section-title {
+            font-size: 1.8em;
+            color: #2c3e50;
+            margin-bottom: 25px;
+            font-weight: 600;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .day-header {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin: 20px 0 15px 0;
+            font-size: 1.3em;
+            font-weight: 600;
+        }
+        
+        .slot {
+            border: none;
+            margin: 10px 0;
+            padding: 20px;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .slot:hover {
+            transform: translateX(5px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        .temporary {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: white;
+        }
+        
+        .permanent {
+            background: linear-gradient(135deg, #27ae60, #229954);
+            color: white;
+        }
+        
+        .slot-time {
+            font-weight: 700;
+            font-size: 1.2em;
+            margin-bottom: 8px;
+        }
+        
+        .slot-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+            font-size: 0.95em;
+        }
+        
+        .live-readings {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .power-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            margin: 5px 0;
+            background: linear-gradient(135deg, #ecf0f1, #d5dbdb);
+            border-radius: 8px;
+            font-size: 0.9em;
+        }
+        
+        .power-high { background: linear-gradient(135deg, #e74c3c, #c0392b) !important; color: white; }
+        .power-medium { background: linear-gradient(135deg, #f39c12, #e67e22) !important; color: white; }
+        .power-low { background: linear-gradient(135deg, #27ae60, #229954) !important; color: white; }
+        
+        @media (max-width: 768px) {
+            .layout {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+            }
+            
+            .nav-menu {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            
+            .nav-menu li {
+                margin: 0;
+            }
+            
+            .slot-info {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <h2>📋 Dashboard</h2>
+            <ul class="nav-menu">
+                <li><a href="/" class="active">📅 Schedule Calendar</a></li>
+                <li><a href="/power-usage">⚡ Power Usage</a></li>
+            </ul>
+            
+            <% if (Object.keys(latestPowerReadings).length > 0) { %>
+                <div class="live-readings">
+                    <h3 style="color: #2c3e50; margin-bottom: 15px;">🔴 Live Readings</h3>
+                    <% Object.keys(latestPowerReadings).forEach(roomId => { %>
+                        <% 
+                            const reading = latestPowerReadings[roomId];
+                            const watts = reading.watts;
+                            let powerClass = 'power-low';
+                            if (watts > 1000) powerClass = 'power-high';
+                            else if (watts > 500) powerClass = 'power-medium';
+                            
+                            const timeAgo = Math.round((Date.now() - reading.timestamp.getTime()) / 1000);
+                        %>
+                        <div class="power-item <%= powerClass %>">
+                            <div>
+                                <div style="font-weight: 600;">📡 <%= roomId %></div>
+                                <div style="font-size: 0.85em;"><%= timeAgo %>s ago</div>
+                            </div>
+                            <div style="font-weight: 700;"><%= watts %>W</div>
+                        </div>
+                    <% }); %>
+                </div>
+            <% } %>
+        </aside>
+        
+        <main class="main-content">
+            <div class="header">
+                <h1>📅 Schedule Calendar</h1>
+                <p>Smart schedule management system</p>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number"><%= stats.permanentSchedules %></div>
+                    <div class="stat-label">Permanent Schedules</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number"><%= stats.temporarySchedules %></div>
+                    <div class="stat-label">Temporary Schedules</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number"><%= stats.totalSlots %></div>
+                    <div class="stat-label">Total Schedule Slots</div>
+                </div>
+            </div>
+            
+            <div class="schedule-section">
+                <h2 class="section-title">📅 Weekly Schedule</h2>
+                
+                <% const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; %>
+                <% dayOrder.forEach(day => { %>
+                    <div class="day-header">📅 <%= day %></div>
+                    
+                    <% if (scheduleByDay[day] && scheduleByDay[day].length > 0) { %>
+                        <% scheduleByDay[day].forEach(slot => { %>
+                            <div class="<%= slot.is_temporary ? 'slot temporary' : 'slot permanent' %>">
+                                <div class="slot-time">
+                                    <%= slot.is_temporary ? '⚡' : '📋' %> <%= slot.start_time %> - <%= slot.end_time %>
+                                </div>
+                                <div class="slot-info">
+                                    <div>🏢 Room: <%= slot.room_id %></div>
+                                    <div>📚 <%= slot.subject %></div>
+                                    <div>👨‍🏫 <%= slot.teacher %></div>
+                                    <div><%= slot.teacher_email ? `📧 ${slot.teacher_email}` : '' %></div>
+                                </div>
+                            </div>
+                        <% }); %>
+                    <% } else { %>
+                        <p style="margin: 15px 0; color: #7f8c8d; font-style: italic;">No scheduled classes</p>
+                    <% } %>
+                <% }); %>
+            </div>
+        </main>
+    </div>
+    
+    <script>
+        // Auto-refresh every 30 seconds
+        setTimeout(() => {
+            location.reload();
+        }, 30000);
+    </script>
+</body>
+</html>
