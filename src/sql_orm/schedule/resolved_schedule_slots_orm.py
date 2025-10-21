@@ -81,7 +81,7 @@ def get_nearby_schedules_for_room_and_day(
         
         return session.query(ResolvedScheduleSlotOrm).filter(
             sa.and_(
-                ResolvedScheduleSlotOrm.day_name == day_name,
+                sa.func.lower(ResolvedScheduleSlotOrm.day_name) == day_name.lower(),
                 ResolvedScheduleSlotOrm.room_id == room_id,
                 schedule_start_minutes >= current_end_time_minutes,
                 schedule_start_minutes <= max_search_time_minutes
