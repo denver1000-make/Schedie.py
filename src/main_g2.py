@@ -44,7 +44,8 @@ from src.mqtt.mqtt_manager import (
     SCHEDULE_CANCEL_PATTERN,
     SYSTEM_SETTINGS_UPDATE_PATTERN,
     SCHEDULE_TEMP_ACK,
-    SCHEDULE_UPDATE_ACK
+    SCHEDULE_UPDATE_ACK,
+    USAGE_REPORT_PATTERN
 )
 
 # Additional ACK constants
@@ -161,6 +162,7 @@ def main():
     from src.sql_orm.schedule.schedule_wrapper_orm import ScheduleWrapperOrm
     from src.sql_orm.turn_on_jobs.turn_on_job_orm import RunningTurnOnJobOrm
     from src.sql_orm.cancellation.cancelled_schedule_orm import CancelledScheduleOrm
+    from src.sql_orm.usage.power_usage_orm import PowerUsageOrm
     
     from src.sql_orm.connection.sqlalchemy_pg import engine
     
@@ -302,7 +304,37 @@ def main():
             
             running_job = get_running_job(canc_obj.timeslot_id)
             
+            # ALWAYS store cancellation record in database for ALL cancellations
+            cancelled_date = f"{canc_obj.year:04d}-{canc_obj.month:02d}-{canc_obj.day_of_month:02d}"
             
+            cancelled_schedule = CancelledScheduleOrm(
+                cancellation_id=canc_obj.cancellation_id,
+                timeslot_id=canc_obj.timeslot_id,
+                cancellation_type="permanent_instance" if not schedule_slot.is_temporary else "temporary_instance",
+                cancelled_at=time_now,
+                cancelled_date=cancelled_date,
+                reason=canc_obj.reason,
+                cancelled_by=canc_obj.teacher_email,
+                room_id=canc_obj.room_id,
+                teacher_name=canc_obj.teacher_name,
+                teacher_id=canc_obj.teacher_id,
+                teacher_email=canc_obj.teacher_email,
+                day_name=canc_obj.day,
+                year=canc_obj.year,
+                month=canc_obj.month,
+                day_of_month=canc_obj.day_of_month,
+                subject=schedule_slot.subject,
+                start_time=schedule_slot.start_time,
+                end_time=schedule_slot.end_time
+            )
+            
+            insert_success = insert_cancellation_info(cancelled_schedule)
+            if insert_success:
+                print(f"✅ Stored cancellation record for {cancelled_date}, timeslot {canc_obj.timeslot_id}")
+            else:
+                print(f"❌ Failed to store cancellation record")
+                
+            # Handle immediate shutdown for today's running schedules
             if schedule_slot.is_temporary or (not schedule_slot.is_temporary and is_today_cancellation and running_job):
                 if running_job:
                     send_shutdown_warning(
@@ -310,7 +342,8 @@ def main():
                         room_id=canc_obj.room_id
                     )
                     
-                    shutdown_time = time_now + datetime.timedelta(minutes=5)
+                    # Fixed: Change from 5 minutes to 1 minute
+                    shutdown_time = time_now + datetime.timedelta(minutes=1)
                     
                     def shutdown_cancelled_room():
                         mqtt_turn_off(
@@ -326,35 +359,9 @@ def main():
                         replace_existing=True
                     )
                     
-                    print(f"✅ Scheduled shutdown for running room {canc_obj.room_id} in 5 minutes (Today's cancellation)")
+                    print(f"✅ Scheduled shutdown for running room {canc_obj.room_id} in 1 minute (Today's cancellation)")
                 else:
-                    print(f"✅ Cancellation processed for today but schedule not currently running")
-            else:
-                cancelled_date = f"{canc_obj.year:04d}-{canc_obj.month:02d}-{canc_obj.day_of_month:02d}"
-                
-                cancelled_schedule = CancelledScheduleOrm(
-                    timeslot_id=canc_obj.timeslot_id,
-                    cancellation_type="permanent_instance" if not schedule_slot.is_temporary else "temporary_instance",
-                    cancelled_at=time_now,
-                    cancelled_date=cancelled_date,
-                    reason=canc_obj.reason,
-                    cancelled_by=canc_obj.teacher_email,
-                    cancellation_id=canc_obj.cancellation_id,
-                    room_id=canc_obj.room_id,
-                    teacher_name=canc_obj.teacher_name,
-                    teacher_id=canc_obj.teacher_id,
-                    teacher_email=canc_obj.teacher_email,
-                    day_name=canc_obj.day,
-                    year=canc_obj.year,
-                    month=canc_obj.month,
-                    day_of_month=canc_obj.day_of_month,
-                    subject=schedule_slot.subject,
-                    start_time=schedule_slot.start_time,
-                    end_time=schedule_slot.end_time
-                )
-                
-                insert_cancellation_info(cancelled_schedule)
-                print(f"✅ Added cancellation record for future date {cancelled_date}, timeslot {canc_obj.timeslot_id}")    
+                    print(f"✅ Cancellation processed for today but schedule not currently running")    
             
     
             ack_payload = {
@@ -463,6 +470,62 @@ def main():
             traceback.print_exc()
             return
     
+    def receive_usage_report(client: mqtt.Client, msg: mqtt.MQTTMessage):
+        """
+        Receive power usage reports from ESP32 devices.
+        Expected topic: usage_report/{room_id}
+        Expected payload: power in watts (integer)
+        """
+        print(f"🔋 USAGE REPORT CALLBACK CALLED - Topic: {msg.topic}")
+        
+        # Check for null payload
+        if not msg.payload or len(msg.payload) == 0:
+            print("ℹ️ Empty usage report payload received")
+            return
+            
+        try:
+            # Extract room_id from topic: usage_report/RM301 -> RM301
+            topic_parts = msg.topic.split('/')
+            if len(topic_parts) != 2 or topic_parts[0] != 'usage_report':
+                print(f"❌ Invalid usage report topic format: {msg.topic}")
+                return
+                
+            room_id = topic_parts[1]
+            
+            # Parse power data (ESP32 sends integer watts)
+            power_watts = int(msg.payload.decode().strip())
+            
+            # Validate power reading
+            if power_watts < 0 or power_watts > 10000:  # Reasonable bounds
+                print(f"⚠️ Suspicious power reading: {power_watts}W for {room_id}")
+                return
+            
+            from src.sql_orm.usage.power_usage_orm import insert_power_usage, PowerUsageOrm
+            
+            # Create power usage record
+            usage_record = PowerUsageOrm(
+                room_id=room_id,
+                power_watts=power_watts,
+                timestamp=datetime.datetime.now(tz=DEVICE_TZ).replace(tzinfo=None)  # Store as UTC
+            )
+            
+            # Insert into database
+            success = insert_power_usage(usage_record)
+            
+            if success:
+                print(f"✅ Recorded {power_watts}W usage for {room_id}")
+            else:
+                print(f"❌ Failed to record usage for {room_id}")
+                
+        except ValueError as e:
+            print(f"❌ Invalid power value in usage report: {msg.payload} - {e}")
+            return
+        except Exception as e:
+            print(f"❌ Failed to process usage report: {e}")
+            import traceback
+            traceback.print_exc()
+            return
+    
     # Register MQTT callback OUTSIDE the callback function
     register_callback(
         SCHEDULE_UPDATE_PATTERN, 
@@ -477,6 +540,11 @@ def main():
     register_callback(
         SCHEDULE_TEMP_UPDATE,
         receive_temporary_schedule
+    )
+    
+    register_callback(
+        USAGE_REPORT_PATTERN,
+        receive_usage_report
     )
     
     schedule_in_use = get_in_use_schedule()

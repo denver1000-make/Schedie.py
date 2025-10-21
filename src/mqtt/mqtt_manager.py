@@ -24,11 +24,13 @@ SET_SETTINGS = "set_settings"
 SET_ROOM_STATUS = "set_room_status"
 HEARTBEAT = "heartbeat"
 SCHEDULE_SHUTDOWN_WARNING = "room_shutdown_warning"
+USAGE_REPORT = "usage_report"  # Base topic for power usage reports
 
 # Subscription topic patterns (with wildcards for subscribing)
 SYSTEM_SETTINGS_UPDATE_PATTERN = f"{SYSTEM_SETTINGS_UPDATE_BASE}/#"
 SCHEDULE_UPDATE_PATTERN = f"{SCHEDULE_UPDATE}/#"
 SCHEDULE_CANCEL_PATTERN = f"{SCHEDULE_CANCEL}/#"  # Pattern for cancel_schedule/*
+USAGE_REPORT_PATTERN = f"{USAGE_REPORT}/#"  # Pattern for usage_report/*
 
 # Topic patterns for subscriptions (used in on_connect)
 MQTT_SUBSCRIPTION_TOPICS = [
@@ -39,7 +41,8 @@ MQTT_SUBSCRIPTION_TOPICS = [
     SCHEDULE_UPDATE_PATTERN,  # Subscribe to all schedule updates with wildcard
     SCHEDULE_TEMP_UPDATE,
     SCHEDULE_CANCEL_PATTERN,  # Subscribe to all schedule cancellations with wildcard
-    SYSTEM_SETTINGS_UPDATE_PATTERN  # Subscribe to all settings updates with wildcard
+    SYSTEM_SETTINGS_UPDATE_PATTERN,  # Subscribe to all settings updates with wildcard
+    USAGE_REPORT_PATTERN  # Subscribe to all usage reports with wildcard
 ]
 
 # Configuration

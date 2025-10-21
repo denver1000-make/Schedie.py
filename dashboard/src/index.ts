@@ -7,6 +7,7 @@ import { ResolvedScheduleSlotsModel } from './models/ResolvedScheduleSlots';
 import { RunningTurnOnJobsModel } from './models/RunningTurnOnJobs';
 import { CancelledSchedulesModel } from './models/CancelledSchedules';
 import { ScheduleWrapperModel } from './models/ScheduleWrapper';
+import { PowerUsageModel } from './models/PowerUsage';
 
 const app = express();
 const port = 8080;
@@ -69,6 +70,11 @@ client.on('connect', () => {
     // Subscribe to log messages if available (some brokers expose these)
     client.subscribe('$SYS/broker/log/+', (err) => {
         if (!err) console.log('Subscribed to broker logs');
+    });
+    
+    // Subscribe to ESP32 power usage reports
+    client.subscribe('usage_report/+', (err) => {
+        if (!err) console.log('Subscribed to power usage reports from ESP32 devices');
     });
 });
 
@@ -155,6 +161,30 @@ client.on('message', (topic, message) => {
         
         bridgeStatus.mosquitto_local_test = newStatus;
         console.log('Direct bridge status updated:', bridgeStatus.mosquitto_local_test);
+    }
+    
+    // Handle ESP32 power usage reports
+    if (topic.startsWith('usage_report/')) {
+        const roomId = topic.split('/')[1]; // Extract room ID from topic
+        const powerWatts = parseInt(messageStr);
+        
+        if (!isNaN(powerWatts) && roomId) {
+            // Store power usage data in database
+            Database.getClient().then(async (client) => {
+                try {
+                    await PowerUsageModel.insertPowerUsage(client, {
+                        timestamp: new Date(),
+                        room_id: roomId,
+                        power_watts: powerWatts
+                    });
+                    console.log(`📊 Stored power usage: ${roomId} = ${powerWatts}W`);
+                } catch (error) {
+                    console.error('❌ Failed to store power usage:', error);
+                } finally {
+                    client.release();
+                }
+            });
+        }
     }
     
     // Handle broker log messages
@@ -772,6 +802,173 @@ app.post('/publish', async (req, res) => {
             success: false, 
             error: error.message 
         });
+    }
+});
+
+// Power Usage Routes
+app.get('/power-usage', async (req, res) => {
+    try {
+        const client = await Database.getClient();
+        
+        try {
+            const selectedRoom = req.query.room as string || 'all';
+            const startDate = req.query.startDate as string || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            const endDate = req.query.endDate as string || new Date().toISOString().split('T')[0];
+            const reportType = req.query.reportType as string || 'summary';
+            
+            // Get available rooms
+            const availableRooms = await PowerUsageModel.getAllRooms(client);
+            
+            // Get usage data based on filters
+            let usageData;
+            let roomIds = selectedRoom === 'all' ? undefined : [selectedRoom];
+            
+            if (reportType === 'daily') {
+                usageData = await PowerUsageModel.getDailyUsageStats(
+                    client,
+                    new Date(startDate),
+                    new Date(endDate),
+                    roomIds
+                );
+            } else {
+                usageData = await PowerUsageModel.getPowerUsageSummaryByDateRange(
+                    client,
+                    new Date(startDate),
+                    new Date(endDate),
+                    roomIds
+                );
+            }
+            
+            // Calculate statistics
+            const stats = {
+                totalWatts: usageData.reduce((sum, data) => sum + (data.avg_watts || 0), 0),
+                totalKwh: usageData.reduce((sum, data) => {
+                    const kwh = (data as any).kwh_consumed || ((data as any).total_watts || 0) / 1000;
+                    return sum + kwh;
+                }, 0),
+                avgWatts: usageData.length > 0 ? usageData.reduce((sum, data) => sum + (data.avg_watts || 0), 0) / usageData.length : 0,
+                estimatedCost: 0,
+                highUsageRooms: usageData.filter(data => (data.avg_watts || 0) > 1000)
+            };
+            
+            stats.estimatedCost = stats.totalKwh * 12; // ₱12 per kWh
+            
+            // Get room stats for current power readings
+            const roomStats: any = {};
+            for (const room of availableRooms) {
+                const latestReading = await PowerUsageModel.getLatestPowerReading(client, room);
+                roomStats[room] = {
+                    currentWatts: latestReading?.power_watts || 0
+                };
+            }
+            
+            // Prepare chart data
+            const chartData = {
+                timeLabels: usageData.map(d => (d as any).date || d.room_id),
+                powerData: usageData.map(d => d.avg_watts || 0),
+                roomLabels: availableRooms,
+                roomData: availableRooms.map(room => {
+                    const roomData = usageData.find(d => d.room_id === room);
+                    return roomData?.avg_watts || 0;
+                })
+            };
+            
+            res.render('power-usage', {
+                title: 'Power Usage Report',
+                availableRooms,
+                selectedRoom,
+                startDate,
+                endDate,
+                reportType,
+                usageData,
+                stats,
+                roomStats,
+                chartData
+            });
+            
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('Power usage page error:', error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+// Power Usage API endpoint
+app.get('/api/power-usage', async (req, res) => {
+    try {
+        const client = await Database.getClient();
+        
+        try {
+            const selectedRoom = req.query.room as string;
+            const startDate = req.query.startDate as string;
+            const endDate = req.query.endDate as string;
+            const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+            
+            let data;
+            if (selectedRoom && selectedRoom !== 'all') {
+                data = await PowerUsageModel.getPowerUsageByRoomAndDateRange(
+                    client,
+                    selectedRoom,
+                    new Date(startDate),
+                    new Date(endDate),
+                    limit
+                );
+            } else {
+                data = await PowerUsageModel.getPowerUsageSummaryByDateRange(
+                    client,
+                    new Date(startDate),
+                    new Date(endDate)
+                );
+            }
+            
+            res.json({ success: true, data });
+            
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('Power usage API error:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// Power Usage Export endpoint
+app.get('/power-usage/export', async (req, res) => {
+    try {
+        const client = await Database.getClient();
+        
+        try {
+            const selectedRoom = req.query.room as string || 'all';
+            const startDate = req.query.startDate as string || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            const endDate = req.query.endDate as string || new Date().toISOString().split('T')[0];
+            
+            let roomIds = selectedRoom === 'all' ? undefined : [selectedRoom];
+            
+            const usageData = await PowerUsageModel.getDailyUsageStats(
+                client,
+                new Date(startDate),
+                new Date(endDate),
+                roomIds
+            );
+            
+            // Generate CSV
+            let csv = 'Date,Room ID,Avg Power (W),Max Power (W),Min Power (W),Energy (kWh),Readings,Est Cost (₱)\n';
+            usageData.forEach(data => {
+                csv += `${data.date},${data.room_id},${data.avg_watts},${data.max_watts},${data.min_watts},${data.kwh_consumed},${data.total_readings},${(data.kwh_consumed * 12).toFixed(2)}\n`;
+            });
+            
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename=power-usage-${startDate}-to-${endDate}.csv`);
+            res.send(csv);
+            
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('Power usage export error:', error);
+        res.status(500).send('Export failed');
     }
 });
 

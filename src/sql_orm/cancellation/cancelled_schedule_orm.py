@@ -11,15 +11,14 @@ import sqlalchemy.exc as sa_exception
 class CancelledScheduleOrm(Base):
     __tablename__ = 'cancelled_schedules'
     
-    timeslot_id: Mapped[str] = mapped_column(sa.String(255), ForeignKey('resolved_schedule_slots_v2.timeslot_id'), primary_key=True)
+    # cancellation_id is now the primary key for date-specific cancellations
+    cancellation_id: Mapped[str] = mapped_column(sa.String(255), primary_key=True)  # 'id' from JSON
+    timeslot_id: Mapped[str] = mapped_column(sa.String(255), ForeignKey('resolved_schedule_slots_v2.timeslot_id'))
     cancellation_type: Mapped[str] = mapped_column(sa.String(50))  # 'permanent_instance' or 'temporary_complete'
     cancelled_at: Mapped[datetime.datetime] = mapped_column(sa.DateTime, default=datetime.datetime.utcnow)
     cancelled_date: Mapped[str] = mapped_column(sa.String(20))  # 'YYYY-MM-DD' for permanent, 'all' for temporary
     reason: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     cancelled_by: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)
-    
-    # Additional fields from cancellation JSON
-    cancellation_id: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)  # 'id' from JSON
     room_id: Mapped[Optional[str]] = mapped_column(sa.String(50), nullable=True)  # 'roomId' from JSON
     teacher_name: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)  # 'teacherName' from JSON
     teacher_id: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)  # 'teacherId' from JSON
@@ -67,6 +66,10 @@ def check_cancellation_id_exists(cancellation_id: str) -> bool:
 def check_if_timeslot_cancelled(
     timeslot_id: str
 ) -> CancelledScheduleOrm | None:
+    """
+    Legacy function - checks for any cancellation of timeslot without date filtering.
+    Consider using check_if_timeslot_cancelled_on_date for date-specific checking.
+    """
     try:
         session = get_session()
         try:
@@ -74,6 +77,38 @@ def check_if_timeslot_cancelled(
                 CancelledScheduleOrm
             ).filter(
                 CancelledScheduleOrm.timeslot_id == timeslot_id
+            ).first()
+        finally:
+            session.close()
+    except sa_exception.SQLAlchemyError:
+        return None
+
+
+def check_if_timeslot_cancelled_on_date(
+    timeslot_id: str,
+    date_str: str  # Format: 'YYYY-MM-DD'
+) -> CancelledScheduleOrm | None:
+    """
+    Check if a specific timeslot is cancelled on a specific date.
+    This is the preferred function for date-specific cancellation checking.
+    
+    Args:
+        timeslot_id: The timeslot ID to check
+        date_str: Date in 'YYYY-MM-DD' format
+        
+    Returns:
+        CancelledScheduleOrm: Cancellation record if found, None otherwise
+    """
+    try:
+        session = get_session()
+        try:
+            return session.query(
+                CancelledScheduleOrm
+            ).filter(
+                sa.and_(
+                    CancelledScheduleOrm.timeslot_id == timeslot_id,
+                    CancelledScheduleOrm.cancelled_date == date_str
+                )
             ).first()
         finally:
             session.close()

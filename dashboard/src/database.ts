@@ -137,6 +137,34 @@ export class Database {
                 );
             `);
 
+            // Create power_usage table (TimescaleDB compatible)
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS public.power_usage (
+                    timestamp timestamp without time zone NOT NULL,
+                    room_id character varying(50) NOT NULL,
+                    power_watts integer NOT NULL,
+                    device_id character varying(100),
+                    voltage double precision,
+                    current double precision,
+                    frequency double precision,
+                    power_factor double precision,
+                    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT power_usage_pkey PRIMARY KEY (timestamp, room_id)
+                );
+            `);
+
+            // Create indexes for power_usage table
+            await client.query(`
+                CREATE INDEX IF NOT EXISTS idx_power_usage_room_id 
+                    ON public.power_usage USING btree (room_id);
+                
+                CREATE INDEX IF NOT EXISTS idx_power_usage_timestamp_room 
+                    ON public.power_usage USING btree (timestamp DESC, room_id);
+                
+                CREATE INDEX IF NOT EXISTS idx_power_usage_created_at 
+                    ON public.power_usage USING btree (created_at DESC);
+            `);
+
             // Create foreign key constraints (with proper error handling for existing constraints)
             try {
                 await client.query(`
