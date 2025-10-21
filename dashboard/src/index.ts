@@ -263,7 +263,7 @@ app.get('/', async (req, res) => {
             // Get the in_use permanent schedule from schedule_wrappers
             const inUsePermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
             
-            // Get all temporary schedules from schedule_wrappers_v2 (active by existence)
+            // Get all temporary schedules from schedule_wrappers (active by existence)
             const temporaryWrappers = await ScheduleWrapperModel.findActiveTemporary(client);
             
             let scheduleIds: string[] = [];
@@ -285,13 +285,13 @@ app.get('/', async (req, res) => {
                 console.log('No schedules found - checking if tables exist and have data');
                 
                 // Debug: Check if tables exist and have data
-                const debugQuery1 = `SELECT COUNT(*) as count FROM schedule_wrappers_v2`;
-                const debugQuery2 = `SELECT COUNT(*) as count FROM resolved_schedule_slots_v2`;
+                const debugQuery1 = `SELECT COUNT(*) as count FROM schedule_wrappers`;
+                const debugQuery2 = `SELECT COUNT(*) as count FROM resolved_schedule_slots`;
                 
                 try {
                     const wrapperCount = await client.query(debugQuery1);
                     const slotsCount = await client.query(debugQuery2);
-                    console.log('Schedule wrappers_v2 count:', wrapperCount.rows[0].count);
+                    console.log('Schedule wrappers count:', wrapperCount.rows[0].count);
                     console.log('Resolved slots count:', slotsCount.rows[0].count);
                 } catch (debugError) {
                     console.log('Debug query error:', debugError);
@@ -467,9 +467,9 @@ app.get('/api/weekly-schedule', async (req, res) => {
             // Get the in_use permanent schedule from schedule_wrappers
             const inUsePermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
             
-            // Get all temporary schedules directly from resolved_schedule_slots_v2
+            // Get all temporary schedules directly from resolved_schedule_slots
             const temporarySchedulesQuery = `
-                SELECT DISTINCT schedule_id FROM resolved_schedule_slots_v2 
+                SELECT DISTINCT schedule_id FROM resolved_schedule_slots 
                 WHERE is_temporary = true
                 ORDER BY schedule_id
             `;
@@ -536,9 +536,9 @@ app.get('/api/schedule-status', async (req, res) => {
             // Get the in_use permanent schedule from schedule_wrappers
             const inUsePermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
             
-            // Get all temporary schedules directly from resolved_schedule_slots_v2
+            // Get all temporary schedules directly from resolved_schedule_slots
             const temporarySchedulesQuery = `
-                SELECT DISTINCT schedule_id FROM resolved_schedule_slots_v2 
+                SELECT DISTINCT schedule_id FROM resolved_schedule_slots 
                 WHERE is_temporary = true
                 ORDER BY schedule_id
             `;
@@ -721,7 +721,7 @@ app.get('/api/debug/data-status', async (req, res) => {
             
             // Get resolved schedule slots counts
             console.log('Getting resolved schedule slots...');
-            const allSlotsQuery = 'SELECT COUNT(*) as total, schedule_id FROM resolved_schedule_slots_v2 GROUP BY schedule_id';
+            const allSlotsQuery = 'SELECT COUNT(*) as total, schedule_id FROM resolved_schedule_slots GROUP BY schedule_id';
             const allSlotsResult = await client.query(allSlotsQuery);
             console.log('Slots result:', allSlotsResult.rows);
             

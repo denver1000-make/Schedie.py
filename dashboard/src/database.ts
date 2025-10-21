@@ -67,7 +67,7 @@ export class Database {
             
             // Create schedule_wrappers table (matches new schema)
             await client.query(`
-                CREATE TABLE IF NOT EXISTS public.schedule_wrappers_v2 (
+                CREATE TABLE IF NOT EXISTS public.schedule_wrappers (
                     schedule_id character varying NOT NULL,
                     upload_date_epoch double precision NOT NULL,
                     is_temporary boolean NOT NULL,
@@ -78,9 +78,9 @@ export class Database {
                 );
             `);
 
-            // Create resolved_schedule_slots_v2 table (matches new schema)
+            // Create resolved_schedule_slots table (matches new schema)
             await client.query(`
-                CREATE TABLE IF NOT EXISTS public.resolved_schedule_slots_v2 (
+                CREATE TABLE IF NOT EXISTS public.resolved_schedule_slots (
                     timeslot_id character varying NOT NULL,
                     schedule_id character varying NOT NULL,
                     room_id character varying NOT NULL,
@@ -99,7 +99,7 @@ export class Database {
                     start_date_in_seconds_epoch double precision,
                     end_date_in_seconds_epoch double precision,
                     is_temporary boolean NOT NULL,
-                    CONSTRAINT resolved_schedule_slots_v2_pkey PRIMARY KEY (timeslot_id)
+                    CONSTRAINT resolved_schedule_slots_pkey PRIMARY KEY (timeslot_id)
                 );
             `);
 
@@ -172,16 +172,16 @@ export class Database {
                     BEGIN
                         IF NOT EXISTS (
                             SELECT 1 FROM information_schema.table_constraints 
-                            WHERE constraint_name = 'resolved_schedule_slots_v2_schedule_id_fkey'
+                            WHERE constraint_name = 'resolved_schedule_slots_schedule_id_fkey'
                         ) THEN
-                            ALTER TABLE ONLY public.resolved_schedule_slots_v2
-                            ADD CONSTRAINT resolved_schedule_slots_v2_schedule_id_fkey 
-                            FOREIGN KEY (schedule_id) REFERENCES public.schedule_wrappers_v2(schedule_id);
+                            ALTER TABLE ONLY public.resolved_schedule_slots
+                            ADD CONSTRAINT resolved_schedule_slots_schedule_id_fkey 
+                            FOREIGN KEY (schedule_id) REFERENCES public.schedule_wrappers(schedule_id);
                         END IF;
                     END $$;
                 `);
             } catch (err: any) {
-                console.log('Note: Foreign key constraint resolved_schedule_slots_v2_schedule_id_fkey handling completed');
+                console.log('Note: Foreign key constraint resolved_schedule_slots_schedule_id_fkey handling completed');
             }
 
             try {
@@ -194,7 +194,7 @@ export class Database {
                         ) THEN
                             ALTER TABLE ONLY public.cancelled_schedules
                             ADD CONSTRAINT cancelled_schedules_timeslot_id_fkey 
-                            FOREIGN KEY (timeslot_id) REFERENCES public.resolved_schedule_slots_v2(timeslot_id);
+                            FOREIGN KEY (timeslot_id) REFERENCES public.resolved_schedule_slots(timeslot_id);
                         END IF;
                     END $$;
                 `);
@@ -212,7 +212,7 @@ export class Database {
                         ) THEN
                             ALTER TABLE ONLY public.running_turn_on_jobs
                             ADD CONSTRAINT running_turn_on_jobs_timeslot_id_fkey 
-                            FOREIGN KEY (timeslot_id) REFERENCES public.resolved_schedule_slots_v2(timeslot_id);
+                            FOREIGN KEY (timeslot_id) REFERENCES public.resolved_schedule_slots(timeslot_id);
                         END IF;
                     END $$;
                 `);

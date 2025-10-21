@@ -8,10 +8,10 @@ export interface ScheduleWrapper {
 }
 
 export class ScheduleWrapperModel {
-    static tableName = 'schedule_wrappers_v2';
+    static tableName = 'schedule_wrappers';
 
     static createTableQuery = `
-        CREATE TABLE IF NOT EXISTS public.schedule_wrappers_v2 (
+        CREATE TABLE IF NOT EXISTS public.schedule_wrappers (
             schedule_id character varying NOT NULL,
             upload_date_epoch double precision NOT NULL,
             is_temporary boolean NOT NULL,
