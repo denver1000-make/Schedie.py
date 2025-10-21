@@ -13,7 +13,7 @@ exports.RunningTurnOnJobsModel = void 0;
 class RunningTurnOnJobsModel {
     static findAll(client) {
         return __awaiter(this, void 0, void 0, function* () {
-            const query = `SELECT * FROM ${this.tableName} ORDER BY created_at DESC`;
+            const query = `SELECT * FROM ${this.tableName} ORDER BY timeslot_id`;
             const result = yield client.query(query);
             return result.rows;
         });
@@ -27,7 +27,7 @@ class RunningTurnOnJobsModel {
     }
     static findRunningJobs(client) {
         return __awaiter(this, void 0, void 0, function* () {
-            const query = `SELECT * FROM ${this.tableName} ORDER BY created_at DESC`;
+            const query = `SELECT * FROM ${this.tableName} ORDER BY timeslot_id`;
             const result = yield client.query(query);
             const runningJobsMap = new Map();
             result.rows.forEach((job) => {

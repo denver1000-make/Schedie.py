@@ -35,3 +35,5 @@ tests/
 node_modules/
 
 *.md
+
+postgres/postgres_data

@@ -11,6 +11,13 @@
             "module": "src.main_v3",
             "cwd": "/app"
         },
+        {
+            "name": "Python: Run main_g2",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.main_g2",
+            "cwd": "/app"
+        },
         // {
         //     "name": "Python: Run main_v2",
         //     "type": "debugpy",

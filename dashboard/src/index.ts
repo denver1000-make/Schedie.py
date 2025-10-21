@@ -7,6 +7,7 @@ import { ResolvedScheduleSlotsModel } from './models/ResolvedScheduleSlots';
 import { RunningTurnOnJobsModel } from './models/RunningTurnOnJobs';
 import { CancelledSchedulesModel } from './models/CancelledSchedules';
 import { ScheduleWrapperModel } from './models/ScheduleWrapper';
+import { PowerUsageModel } from './models/PowerUsage';
 
 const app = express();
 const port = 8080;
@@ -33,6 +34,14 @@ let bridgeStatus = {
         connectionHistory: [] as Array<{timestamp: Date, state: string, message?: string}>
     }
 };
+
+// MQTT Debug Message Store
+let mqttDebugMessages: Array<{
+    timestamp: Date,
+    topic: string,
+    message: string,
+    messageType: string
+}> = [];
 
 client.on('connect', () => {
     console.log('Connected to MQTT broker:', brokerUrl);
@@ -62,11 +71,34 @@ client.on('connect', () => {
     client.subscribe('$SYS/broker/log/+', (err) => {
         if (!err) console.log('Subscribed to broker logs');
     });
+    
+    // Subscribe to ESP32 power usage reports
+    client.subscribe('usage_report/+', (err) => {
+        if (!err) console.log('Subscribed to power usage reports from ESP32 devices');
+    });
 });
 
 client.on('message', (topic, message) => {
     const messageStr = message.toString();
     console.log(`Received message on ${topic}: ${messageStr}`);
+    
+    // Store all MQTT messages for debug view
+    const messageType = topic.startsWith('$SYS/broker/connection/') ? 'connection' :
+                       topic.startsWith('$SYS/broker/log/') ? 'log' :
+                       topic.startsWith('$SYS/broker/clients/') ? 'clients' :
+                       'other';
+    
+    mqttDebugMessages.unshift({
+        timestamp: new Date(),
+        topic: topic,
+        message: messageStr,
+        messageType: messageType
+    });
+    
+    // Keep only last 100 messages
+    if (mqttDebugMessages.length > 100) {
+        mqttDebugMessages = mqttDebugMessages.slice(0, 100);
+    }
     
     // Handle all bridge connections
     if (topic.startsWith('$SYS/broker/connection/') && topic.endsWith('/state')) {
@@ -131,6 +163,30 @@ client.on('message', (topic, message) => {
         console.log('Direct bridge status updated:', bridgeStatus.mosquitto_local_test);
     }
     
+    // Handle ESP32 power usage reports
+    if (topic.startsWith('usage_report/')) {
+        const roomId = topic.split('/')[1]; // Extract room ID from topic
+        const powerWatts = parseInt(messageStr);
+        
+        if (!isNaN(powerWatts) && roomId) {
+            // Store power usage data in database
+            Database.getClient().then(async (client) => {
+                try {
+                    await PowerUsageModel.insertPowerUsage(client, {
+                        timestamp: new Date(),
+                        room_id: roomId,
+                        power_watts: powerWatts
+                    });
+                    console.log(`📊 Stored power usage: ${roomId} = ${powerWatts}W`);
+                } catch (error) {
+                    console.error('❌ Failed to store power usage:', error);
+                } finally {
+                    client.release();
+                }
+            });
+        }
+    }
+    
     // Handle broker log messages
     if (topic.startsWith('$SYS/broker/log/')) {
         console.log(`Broker log: ${messageStr}`);
@@ -192,41 +248,54 @@ app.get('/', async (req, res) => {
             });
         }
 
-        // Create tables if they don't exist
-        await Database.createTables();
+        // Create tables if they don't exist (suppress constraint errors)
+        try {
+            await Database.createTables();
+        } catch (error) {
+            // Log but don't display database constraint errors to users
+            console.log('Database setup completed with some warnings (constraints may already exist)');
+        }
 
         // Fetch processed schedules
         const client = await Database.getClient();
         
         try {
-            // Get the most recent non-temporary schedule from schedule_wrappers
-            const mostRecentPermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
+            // Get the in_use permanent schedule from schedule_wrappers
+            const inUsePermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
             
-            // Get all temporary schedules directly from resolved_schedule_slots (they don't have wrapper entries)
-            const temporarySchedulesQuery = `
-                SELECT DISTINCT schedule_id FROM resolved_schedule_slots 
-                WHERE is_temporary = true
-                ORDER BY schedule_id
-            `;
-            const temporaryResult = await client.query(temporarySchedulesQuery);
+            // Get all temporary schedules from schedule_wrappers (active by existence)
+            const temporaryWrappers = await ScheduleWrapperModel.findActiveTemporary(client);
             
             let scheduleIds: string[] = [];
             
-            // Add the most recent permanent schedule
-            if (mostRecentPermanentWrapper) {
-                scheduleIds.push(mostRecentPermanentWrapper.schedule_id);
-                console.log('Added permanent schedule:', mostRecentPermanentWrapper.schedule_id);
+            // Add the in_use permanent schedule
+            if (inUsePermanentWrapper) {
+                scheduleIds.push(inUsePermanentWrapper.schedule_id);
+                console.log('Added in_use permanent schedule:', inUsePermanentWrapper.schedule_id);
             }
             
-            // Add all temporary schedules (from resolved_schedule_slots directly)
-            if (temporaryResult.rows.length > 0) {
-                const tempIds = temporaryResult.rows.map((row: any) => row.schedule_id);
+            // Add all temporary schedules (active by existence)
+            if (temporaryWrappers.length > 0) {
+                const tempIds = temporaryWrappers.map(wrapper => wrapper.schedule_id);
                 scheduleIds.push(...tempIds);
                 console.log('Added temporary schedules:', tempIds);
             }
             
             if (scheduleIds.length === 0) {
-                console.log('No schedules found in either schedule_wrappers or resolved_schedule_slots');
+                console.log('No schedules found - checking if tables exist and have data');
+                
+                // Debug: Check if tables exist and have data
+                const debugQuery1 = `SELECT COUNT(*) as count FROM schedule_wrappers_v2`;
+                const debugQuery2 = `SELECT COUNT(*) as count FROM resolved_schedule_slots_v2`;
+                
+                try {
+                    const wrapperCount = await client.query(debugQuery1);
+                    const slotsCount = await client.query(debugQuery2);
+                    console.log('Schedule wrappers_v2 count:', wrapperCount.rows[0].count);
+                    console.log('Resolved slots count:', slotsCount.rows[0].count);
+                } catch (debugError) {
+                    console.log('Debug query error:', debugError);
+                }
             } else {
                 console.log('Consolidated schedule IDs:', scheduleIds);
             }
@@ -319,9 +388,37 @@ app.get('/', async (req, res) => {
     }
 });
 
+// Debug route for MQTT messages
+app.get('/debug/mqtt', (req, res) => {
+    res.render('mqtt-debug', {
+        title: 'MQTT Debug Messages',
+        bridgeStatus: bridgeStatus,
+        dbInfo: 'postgres@postgres:5432/schedule_db'
+    });
+});
+
 // API endpoint to get bridge status
 app.get('/api/bridge-status', (req, res) => {
     res.json(bridgeStatus);
+});
+
+// API endpoint to get MQTT debug messages
+app.get('/api/mqtt-debug', (req, res) => {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const messageType = req.query.type as string;
+    
+    let filteredMessages = mqttDebugMessages;
+    
+    if (messageType && messageType !== 'all') {
+        filteredMessages = mqttDebugMessages.filter(msg => msg.messageType === messageType);
+    }
+    
+    res.json({
+        messages: filteredMessages.slice(0, limit),
+        totalCount: mqttDebugMessages.length,
+        messageTypes: ['all', 'connection', 'log', 'clients', 'other'],
+        bridgeStatus: bridgeStatus
+    });
 });
 
 // API endpoint to get schedules as JSON
@@ -367,8 +464,8 @@ app.get('/api/weekly-schedule', async (req, res) => {
         const client = await Database.getClient();
         
         try {
-            // Get the most recent non-temporary schedule from schedule_wrappers
-            const mostRecentPermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
+            // Get the in_use permanent schedule from schedule_wrappers
+            const inUsePermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
             
             // Get all temporary schedules directly from resolved_schedule_slots
             const temporarySchedulesQuery = `
@@ -380,9 +477,9 @@ app.get('/api/weekly-schedule', async (req, res) => {
             
             let scheduleIds: string[] = [];
             
-            // Add the most recent permanent schedule
-            if (mostRecentPermanentWrapper) {
-                scheduleIds.push(mostRecentPermanentWrapper.schedule_id);
+            // Add the in_use permanent schedule
+            if (inUsePermanentWrapper) {
+                scheduleIds.push(inUsePermanentWrapper.schedule_id);
             }
             
             // Add all temporary schedules
@@ -436,8 +533,8 @@ app.get('/api/schedule-status', async (req, res) => {
         const client = await Database.getClient();
         
         try {
-            // Get the most recent non-temporary schedule from schedule_wrappers
-            const mostRecentPermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
+            // Get the in_use permanent schedule from schedule_wrappers
+            const inUsePermanentWrapper = await ScheduleWrapperModel.findMostRecentPermanent(client);
             
             // Get all temporary schedules directly from resolved_schedule_slots
             const temporarySchedulesQuery = `
@@ -449,9 +546,9 @@ app.get('/api/schedule-status', async (req, res) => {
             
             let scheduleIds: string[] = [];
             
-            // Add the most recent permanent schedule
-            if (mostRecentPermanentWrapper) {
-                scheduleIds.push(mostRecentPermanentWrapper.schedule_id);
+            // Add the in_use permanent schedule
+            if (inUsePermanentWrapper) {
+                scheduleIds.push(inUsePermanentWrapper.schedule_id);
             }
             
             // Add all temporary schedules
@@ -468,7 +565,8 @@ app.get('/api/schedule-status', async (req, res) => {
                     },
                     runningJobs: {},
                     cancelledSchedules: {},
-                    mostRecentScheduleId: null,
+                    consolidatedScheduleIds: [],
+                    permanentScheduleId: null,
                     lastUpdate: new Date().toISOString(),
                     message: 'No schedules found'
                 });
@@ -493,7 +591,7 @@ app.get('/api/schedule-status', async (req, res) => {
                 runningJobs: runningJobsObj,
                 cancelledSchedules: cancelledSchedulesObj,
                 consolidatedScheduleIds: scheduleIds,
-                permanentScheduleId: mostRecentPermanentWrapper ? mostRecentPermanentWrapper.schedule_id : null,
+                permanentScheduleId: inUsePermanentWrapper ? inUsePermanentWrapper.schedule_id : null,
                 lastUpdate: new Date().toISOString()
             });
         } finally {
@@ -517,10 +615,11 @@ app.post('/api/test/create-schedule-wrapper', async (req, res) => {
             
             const wrapper = await ScheduleWrapperModel.create(client, {
                 schedule_id: scheduleId,
-                upload_date_epoch: BigInt(Date.now()),
+                upload_date_epoch: Date.now(),
                 is_temporary: req.body.is_temporary || false,
                 is_synced_to_remote: req.body.is_synced_to_remote !== undefined ? req.body.is_synced_to_remote : true,
-                is_from_remote: req.body.is_from_remote !== undefined ? req.body.is_from_remote : true
+                is_from_remote: req.body.is_from_remote !== undefined ? req.body.is_from_remote : true,
+                in_use: req.body.in_use !== undefined ? req.body.in_use : true
             });
             
             res.json({
@@ -703,6 +802,173 @@ app.post('/publish', async (req, res) => {
             success: false, 
             error: error.message 
         });
+    }
+});
+
+// Power Usage Routes
+app.get('/power-usage', async (req, res) => {
+    try {
+        const client = await Database.getClient();
+        
+        try {
+            const selectedRoom = req.query.room as string || 'all';
+            const startDate = req.query.startDate as string || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            const endDate = req.query.endDate as string || new Date().toISOString().split('T')[0];
+            const reportType = req.query.reportType as string || 'summary';
+            
+            // Get available rooms
+            const availableRooms = await PowerUsageModel.getAllRooms(client);
+            
+            // Get usage data based on filters
+            let usageData;
+            let roomIds = selectedRoom === 'all' ? undefined : [selectedRoom];
+            
+            if (reportType === 'daily') {
+                usageData = await PowerUsageModel.getDailyUsageStats(
+                    client,
+                    new Date(startDate),
+                    new Date(endDate),
+                    roomIds
+                );
+            } else {
+                usageData = await PowerUsageModel.getPowerUsageSummaryByDateRange(
+                    client,
+                    new Date(startDate),
+                    new Date(endDate),
+                    roomIds
+                );
+            }
+            
+            // Calculate statistics
+            const stats = {
+                totalWatts: usageData.reduce((sum, data) => sum + (data.avg_watts || 0), 0),
+                totalKwh: usageData.reduce((sum, data) => {
+                    const kwh = (data as any).kwh_consumed || ((data as any).total_watts || 0) / 1000;
+                    return sum + kwh;
+                }, 0),
+                avgWatts: usageData.length > 0 ? usageData.reduce((sum, data) => sum + (data.avg_watts || 0), 0) / usageData.length : 0,
+                estimatedCost: 0,
+                highUsageRooms: usageData.filter(data => (data.avg_watts || 0) > 1000)
+            };
+            
+            stats.estimatedCost = stats.totalKwh * 12; // ₱12 per kWh
+            
+            // Get room stats for current power readings
+            const roomStats: any = {};
+            for (const room of availableRooms) {
+                const latestReading = await PowerUsageModel.getLatestPowerReading(client, room);
+                roomStats[room] = {
+                    currentWatts: latestReading?.power_watts || 0
+                };
+            }
+            
+            // Prepare chart data
+            const chartData = {
+                timeLabels: usageData.map(d => (d as any).date || d.room_id),
+                powerData: usageData.map(d => d.avg_watts || 0),
+                roomLabels: availableRooms,
+                roomData: availableRooms.map(room => {
+                    const roomData = usageData.find(d => d.room_id === room);
+                    return roomData?.avg_watts || 0;
+                })
+            };
+            
+            res.render('power-usage', {
+                title: 'Power Usage Report',
+                availableRooms,
+                selectedRoom,
+                startDate,
+                endDate,
+                reportType,
+                usageData,
+                stats,
+                roomStats,
+                chartData
+            });
+            
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('Power usage page error:', error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+// Power Usage API endpoint
+app.get('/api/power-usage', async (req, res) => {
+    try {
+        const client = await Database.getClient();
+        
+        try {
+            const selectedRoom = req.query.room as string;
+            const startDate = req.query.startDate as string;
+            const endDate = req.query.endDate as string;
+            const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+            
+            let data;
+            if (selectedRoom && selectedRoom !== 'all') {
+                data = await PowerUsageModel.getPowerUsageByRoomAndDateRange(
+                    client,
+                    selectedRoom,
+                    new Date(startDate),
+                    new Date(endDate),
+                    limit
+                );
+            } else {
+                data = await PowerUsageModel.getPowerUsageSummaryByDateRange(
+                    client,
+                    new Date(startDate),
+                    new Date(endDate)
+                );
+            }
+            
+            res.json({ success: true, data });
+            
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('Power usage API error:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// Power Usage Export endpoint
+app.get('/power-usage/export', async (req, res) => {
+    try {
+        const client = await Database.getClient();
+        
+        try {
+            const selectedRoom = req.query.room as string || 'all';
+            const startDate = req.query.startDate as string || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            const endDate = req.query.endDate as string || new Date().toISOString().split('T')[0];
+            
+            let roomIds = selectedRoom === 'all' ? undefined : [selectedRoom];
+            
+            const usageData = await PowerUsageModel.getDailyUsageStats(
+                client,
+                new Date(startDate),
+                new Date(endDate),
+                roomIds
+            );
+            
+            // Generate CSV
+            let csv = 'Date,Room ID,Avg Power (W),Max Power (W),Min Power (W),Energy (kWh),Readings,Est Cost (₱)\n';
+            usageData.forEach(data => {
+                csv += `${data.date},${data.room_id},${data.avg_watts},${data.max_watts},${data.min_watts},${data.kwh_consumed},${data.total_readings},${(data.kwh_consumed * 12).toFixed(2)}\n`;
+            });
+            
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename=power-usage-${startDate}-to-${endDate}.csv`);
+            res.send(csv);
+            
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('Power usage export error:', error);
+        res.status(500).send('Export failed');
     }
 });
 

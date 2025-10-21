@@ -16,7 +16,7 @@ from src.sql.cancelled_schedules.cancelled_schedules_sql import (
     pg_remove_cancelled_schedule,
     pg_create_cancelled_schedules_table
 )
-from src.constants import JOB_TURN_ON_SUFFIX, JOB_TURN_OFF_SUFFIX, DEVICE_TZ
+from src.constants import JOB_TURN_ON_SUFFIX, JOB_TURN_OFF_SUFFIX, DEVICE_TZ, JobStatus
 from src.utils.logging_config import (
     get_mqtt_logger, 
     log_mqtt_publish, 
@@ -221,10 +221,31 @@ def update_room_status(
 ):
     mqtt_client.publish(
         payload=status,
-        qos=2,
+        qos=2, 
         retain=True,
         topic=f"timeslots/{timeslot_id}/status"
     )
+    
+
+def update_timeslot_status(
+    status: int,
+    timeslot_id: str,
+    subject: str, 
+    mqtt_client: mqtt.Client,
+    is_temp: bool
+):
+    payload = {
+        "status": status,
+        "isTemp": is_temp
+    }
+    
+    mqtt_client.publish(
+        payload=json.dumps(payload),
+        qos=2, 
+        retain=True,
+        topic=f"timeslots/{timeslot_id}/state"
+    )
+    
     
     
 
@@ -327,6 +348,61 @@ def send_skipped_turn_off_mqtt(
         print(f"[ERROR] Failed to send skipped turn off MQTT: {e}")
         return False
 
+
+def send_finished_cancellation_mqtt(
+    cancellation_id: str,
+    timeslot_id: str,
+    room_id: str,
+    subject: str,
+    mqtt_client: mqtt.Client,
+    cancellation_type: str = "completed",
+    **kwargs
+) -> bool:
+    """
+    Centralized function to send finished cancellation notification.
+    Uses topic: finished_cancellations/{cancellation_id}
+    
+    This is sent when a cancelled schedule has been fully processed and cleaned up.
+    
+    Args:
+        cancellation_id: Unique cancellation ID for cleanup tracking
+        timeslot_id: Timeslot ID that was cancelled
+        room_id: Room ID
+        subject: Schedule subject
+        mqtt_client: MQTT client instance
+        cancellation_type: Type of cancellation completion ("completed", "expired", "cleaned_up")
+        **kwargs: Additional fields for the message
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        finished_payload = {
+            "timeslot_id": timeslot_id,
+            "room_id": room_id,
+            "subject": subject,
+            "cancellation_type": cancellation_type,
+            "timestamp": datetime.datetime.now(DEVICE_TZ).isoformat(),
+            **kwargs
+        }
+        
+        topic = f"finished_cancellations/{cancellation_id}"
+        
+        print(f"[FINISHED_CANCELLATION] Cancellation {cancellation_id} completed for {room_id} - {subject}")
+        
+        publish_v2(
+            client=mqtt_client,
+            topic=topic,
+            msg=json.dumps(finished_payload),
+            log=True
+        )
+        
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to send finished cancellation MQTT: {e}")
+        return False
+
 def turn_on(
         room_id: str,
         job_turn_off_id: str,
@@ -335,53 +411,26 @@ def turn_on(
         pg_pool: pg_pool.SimpleConnectionPool
 ):
     # Extract timeslot_id from job_turn_on_id (remove suffix)
+    timeslot_id = None
     if job_turn_on_id.endswith(JOB_TURN_ON_SUFFIX):
         timeslot_id = job_turn_on_id[:-len(JOB_TURN_ON_SUFFIX)]
         
-        # Smart cancellation check - prevent turn_on for cancelled schedules
-        today = datetime.datetime.now(DEVICE_TZ).strftime('%Y-%m-%d')
-        
-        try:
-            is_next_cancelled = pg_is_schedule_cancelled(pg_pool, timeslot_id, today)
-            
-            if is_next_cancelled:
-                log_cancellation_operation(
-                    logger, 
-                    "TURN_ON_PREVENTED", 
-                    timeslot_id, 
-                    f"Schedule cancelled for {today} - skipping turn_on for room {room_id}"
-                )
-                
-                # Clean up the cancellation record since we've handled it
-                cleanup_success = pg_remove_cancelled_schedule(pg_pool, timeslot_id, today)
-                if cleanup_success:
-                    log_cancellation_operation(
-                        logger,
-                        "CLEANUP_SUCCESS", 
-                        timeslot_id,
-                        f"Removed cancellation record for {today}"
-                    )
+        # Check if there's a valid running job - this is the core control mechanism
+        if timeslot_id and pg_pool:
+            try:
+                running_job, schedule_slot = pg_get_running_job_with_schedule_slot(pg_pool, timeslot_id)
+                if not running_job:
+                    print(f"[NO_RUNNING_JOB] Turn on skipped for Room {room_id} - no running job found")
+                    return
                 else:
-                    log_cancellation_operation(
-                        logger,
-                        "CLEANUP_FAILED",
-                        timeslot_id, 
-                        f"Failed to remove cancellation record for {today}"
-                    )
-                
-                return  # Exit early - do not turn on
-                
-        except Exception as e:
-            log_cancellation_operation(
-                logger,
-                "CHECK_ERROR",
-                timeslot_id,
-                f"Error checking cancellation status: {str(e)}"
-            )
-            # Continue with turn_on if check fails to avoid blocking legitimate operations
+                    print(f"[RUNNING_JOB_FOUND] Turn on proceeding for Room {room_id} - running job exists")
+            except Exception as e:
+                print(f"[ERROR] Failed to check running job for {timeslot_id}: {e}")
+                return
     
     # Publish MQTT turn_on message using centralized function
     turn_on_mqtt(room_id, mqtt_client)
+    
 
     # Extract timeslot_id from job_turn_on_id (remove suffix) for database logging
     if job_turn_on_id.endswith(JOB_TURN_ON_SUFFIX):
@@ -391,7 +440,7 @@ def turn_on(
         try:
             # Get schedule info for the status update
             running_job, schedule_slot = pg_get_running_job_with_schedule_slot(pg_pool, timeslot_id)
-            subject = schedule_slot.subject if schedule_slot else "Unknown Meeting"
+            subject: str = schedule_slot.subject if schedule_slot else "Unknown Meeting"
             
             update_room_status(
                 room_id=room_id,
@@ -400,6 +449,14 @@ def turn_on(
                 subject=subject,
                 mqtt_client=mqtt_client
             )
+            update_timeslot_status(
+                mqtt_client=mqtt_client,
+                status=JobStatus.JOB_ONGOING,
+                subject=subject,
+                timeslot_id=timeslot_id,
+                is_temp=False
+            )
+            
             print(f"[STATUS] Updated room status to JOB_ONGOING")
         except Exception as e:
             print(f"[ERROR] Failed to update room status: {e}")
@@ -736,15 +793,25 @@ def turn_off(
     if job_turn_off_id.endswith(JOB_TURN_OFF_SUFFIX):
         timeslot_id = job_turn_off_id[:-len(JOB_TURN_OFF_SUFFIX)]
     
-    # Check if there's a running job - if not, skip turn_off entirely
+    # Core control mechanism: Check if there's a running job - if not, skip turn_off entirely
     if timeslot_id and pg_conn_pool:
-        running_job = pg_get_running_job_with_schedule_slot(pg_conn_pool, timeslot_id)[0]
-        
-        if not running_job:
-            print(f"[NO_RUNNING_JOB] Turn off skipped for Room {room_id} - no running job found")
+        try:
+            running_job, schedule_slot = pg_get_running_job_with_schedule_slot(pg_conn_pool, timeslot_id)
+            if not running_job:
+                print(f"[NO_RUNNING_JOB] Turn off skipped for Room {room_id} - no running job found")
+                
+                # Check if this was a cancelled schedule and clean up the cancellation record
+                _cleanup_cancellation_if_exists(timeslot_id, pg_conn_pool, mqtt_client, isTemp)
+                return
+            else:
+                print(f"[RUNNING_JOB_FOUND] Turn off proceeding for Room {room_id} - running job exists")
+                
+                # Clean up any cancellation records for this completed schedule
+                _cleanup_cancellation_if_exists(timeslot_id, pg_conn_pool, mqtt_client, isTemp)
+                
+        except Exception as e:
+            print(f"[ERROR] Failed to check running job for {timeslot_id}: {e}")
             return
-        else:
-            print(f"[RUNNING_JOB_FOUND] Turn off proceeding for Room {room_id} - running job exists")
     
     # Get the current schedule info for smart skip logic
     should_skip = False
@@ -816,6 +883,24 @@ def turn_off(
                 subject=subject,
                 mqtt_client=mqtt_client
             )
+            
+            if isTemp:    
+                update_timeslot_status(
+                    status=JobStatus.JOB_REMOVE,
+                    timeslot_id=timeslot_id,
+                    subject=subject,
+                    mqtt_client=mqtt_client,
+                    is_temp=True
+                )
+            else:
+                update_timeslot_status(
+                    status=JobStatus.JOB_STANDBY,
+                    timeslot_id=timeslot_id,
+                    subject=subject,
+                    mqtt_client=mqtt_client,
+                    is_temp=False
+                )
+            
             status_action = "skipped" if should_skip else "turned_off"
             print(f"[STATUS] Updated room status to JOB_STANDBY ({status_action})")
         except Exception as e:
@@ -842,15 +927,20 @@ def turn_off(
         # Clean up temporary schedule from database when it finishes
         if timeslot_id and pg_conn_pool:
             try:
-                _cleanup_finished_temporary_schedule(timeslot_id, pg_conn_pool)
+                _cleanup_finished_temporary_schedule(timeslot_id, pg_conn_pool, mqtt_client)
             except Exception as e:
                 print(f"[ERROR] Failed to cleanup temporary schedule {timeslot_id}: {e}")
 
 
-def _cleanup_finished_temporary_schedule(timeslot_id: str, pg_conn_pool: pg_pool.SimpleConnectionPool):
+def _cleanup_finished_temporary_schedule(
+    timeslot_id: str, 
+    pg_conn_pool: pg_pool.SimpleConnectionPool,
+    mqtt_client: Optional[mqtt.Client] = None
+):
     """
     Clean up a finished temporary schedule from the database.
     Removes both the schedule wrapper and resolved schedule slots.
+    Sends finished cancellation notification if it was cancelled.
     """
     try:
         # Find the schedule_id for this timeslot
@@ -861,16 +951,36 @@ def _cleanup_finished_temporary_schedule(timeslot_id: str, pg_conn_pool: pg_pool
         temp_wrappers = pg_get_all_schedule_wrappers(pg_conn_pool, is_temporary=True)
         
         target_schedule_id = None
+        schedule_slot = None
         for wrapper in temp_wrappers:
             slots = pg_get_resolved_slots_by_schedule_id(pg_conn_pool, wrapper.schedule_id)
             for slot in slots:
                 if slot.timeslot_id == timeslot_id:
                     target_schedule_id = wrapper.schedule_id
+                    schedule_slot = slot
                     break
             if target_schedule_id:
                 break
         
         if target_schedule_id:
+            # Check if this was a cancelled temporary schedule and send finished notification
+            if mqtt_client and schedule_slot:
+                is_cancelled = pg_is_schedule_cancelled(pg_conn_pool, timeslot_id, "all")
+                if is_cancelled:
+                    # Clean up cancellation record and send notification
+                    pg_remove_cancelled_schedule(pg_conn_pool, timeslot_id, "")
+                    
+                    # Send finished cancellation notification for temp schedule
+                    cancellation_id = f"{timeslot_id}_temp_{int(datetime.datetime.now().timestamp())}"
+                    send_finished_cancellation_mqtt(
+                        cancellation_id=cancellation_id,
+                        timeslot_id=timeslot_id,
+                        room_id=schedule_slot.room_id,
+                        subject=schedule_slot.subject,
+                        mqtt_client=mqtt_client,
+                        cancellation_type="expired_temp"
+                    )
+            
             # Delete the schedule wrapper (CASCADE will remove associated slots)
             success = pg_delete_schedule_wrapper(pg_conn_pool, target_schedule_id)
             if success:
@@ -882,6 +992,85 @@ def _cleanup_finished_temporary_schedule(timeslot_id: str, pg_conn_pool: pg_pool
             
     except Exception as e:
         print(f"[ERROR] Error cleaning up temporary schedule for {timeslot_id}: {e}")
+
+
+def _cleanup_cancellation_if_exists(
+    timeslot_id: str, 
+    pg_conn_pool: pg_pool.SimpleConnectionPool, 
+    mqtt_client: mqtt.Client,
+    is_temp: bool = False
+) -> bool:
+    """
+    Helper function to clean up cancellation records if they exist.
+    This prevents cancelled status from persisting after schedule completion.
+    
+    Args:
+        timeslot_id: Timeslot ID to check
+        pg_conn_pool: Database connection pool
+        mqtt_client: MQTT client for status updates
+        is_temp: Whether this is a temporary schedule
+        
+    Returns:
+        True if cancellation was found and cleaned up, False otherwise
+    """
+    try:
+        today = datetime.datetime.now(DEVICE_TZ).strftime('%Y-%m-%d')
+        
+        # Check if there's a cancellation record
+        is_cancelled = pg_is_schedule_cancelled(pg_conn_pool, timeslot_id, "all")
+        
+        if is_cancelled:
+            # Get schedule info for the cancellation notification
+            try:
+                running_job, schedule_slot = pg_get_running_job_with_schedule_slot(pg_conn_pool, timeslot_id)
+                room_id = schedule_slot.room_id if schedule_slot else "unknown"
+                subject = schedule_slot.subject if schedule_slot else "Unknown Schedule"
+            except:
+                room_id = "unknown"
+                subject = "Unknown Schedule"
+            
+            # Clean up the cancellation record
+            cleanup_success = pg_remove_cancelled_schedule(pg_conn_pool, timeslot_id, "")
+            if cleanup_success:
+                print(f"[CANCELLATION_CLEANUP] Removed cancellation record for {timeslot_id}")
+                
+                # Send finished cancellation notification
+                cancellation_id = f"{timeslot_id}_{today}_{int(datetime.datetime.now().timestamp())}"
+                send_finished_cancellation_mqtt(
+                    cancellation_id=cancellation_id,
+                    timeslot_id=timeslot_id,
+                    room_id=room_id,
+                    subject=subject,
+                    mqtt_client=mqtt_client,
+                    cancellation_type="completed"
+                )
+                
+                # Update status: REMOVE for temp schedules, STANDBY for permanent
+                if is_temp:
+                    update_timeslot_status(
+                        mqtt_client=mqtt_client,
+                        status=JobStatus.JOB_REMOVE,
+                        subject=subject,
+                        timeslot_id=timeslot_id,
+                        is_temp=True
+                    )
+                else:
+                    update_timeslot_status(
+                        mqtt_client=mqtt_client,
+                        status=JobStatus.JOB_STANDBY,
+                        subject=subject,
+                        timeslot_id=timeslot_id,
+                        is_temp=False
+                    )
+                return True
+            else:
+                print(f"[ERROR] Failed to remove cancellation record for {timeslot_id}")
+        
+        return False
+        
+    except Exception as e:
+        print(f"[ERROR] Error during cancellation cleanup for {timeslot_id}: {e}")
+        return False
 
 
 def send_heartbeat(mqtt_client: mqtt.Client):
@@ -906,31 +1095,20 @@ def _execute_delayed_cancellation_turnoff(
     print(f"[DELAYED_TURNOFF] Executing delayed turn off for Room {room_id} after cancellation")
     
     try:
-        # Execute full turn off with job cleanup (like a normal turn_off)
-        # The warning was already sent during the cancellation process
-        print(f"[DELAYED_TURNOFF] Executing full turn_off with job cleanup for {room_id}")
+        # Use the normal turn_off function to ensure consistent behavior
+        # This will handle all status updates and cleanup properly
+        print(f"[DELAYED_TURNOFF] Using normal turn_off function for consistent cleanup")
         
-        # Extract timeslot_id for job cleanup
-        if job_turn_off_id.endswith(JOB_TURN_OFF_SUFFIX):
-            cleanup_timeslot_id = job_turn_off_id[:-len(JOB_TURN_OFF_SUFFIX)]
-            
-            # Remove running job record (like normal turn_off does)
-            pg_remove_running_turn_on_job(pg_conn_pool, cleanup_timeslot_id)
-            print(f"[CLEANUP] Removed running job record for timeslot: {cleanup_timeslot_id}")
-        
-        # Execute the actual MQTT turn off
-        turn_off_mqtt(room_id, mqtt_client)
-        
-        # Update room status
-        update_room_status(
+        turn_off(
             room_id=room_id,
-            status=JOB_STANDBY,
-            timeslot_id=timeslot_id,
-            subject="Cancelled Schedule",
-            mqtt_client=mqtt_client
+            job_turn_off_id=job_turn_off_id,
+            job_turn_on_id=job_turn_on_id,
+            isTemp=isTemp,
+            mqtt_client=mqtt_client,
+            pg_conn_pool=pg_conn_pool
         )
         
-        print(f"[SUCCESS] Delayed turn off completed for Room {room_id} with full cleanup")
+        print(f"[SUCCESS] Delayed turn off completed for Room {room_id} using normal turn_off mechanism")
         
     except Exception as e:
         print(f"[ERROR] Failed to execute delayed turn off for Room {room_id}: {e}")
@@ -938,6 +1116,7 @@ def cancel_schedule(
     timeslot_id: str,
     pg_conn_pool: pg_pool.SimpleConnectionPool,
     mqtt_client: mqtt.Client,
+    subject: str,
     scheduler: Optional[BackgroundScheduler] = None,
     reason: str = "User requested cancellation",
     cancelled_by: str = "system"
@@ -1074,10 +1253,10 @@ def _cancel_running_schedule(
                 # No scheduler available - turn off immediately as fallback
                 print(f"⚠️ No scheduler available - turning off immediately as fallback")
                 turn_off_mqtt(schedule_slot.room_id, mqtt_client)
-                
                 # For immediate fallback, remove from running jobs now
+                # Status cleanup will be handled by normal turn_off mechanism
                 pg_remove_running_turn_on_job(pg_conn_pool, timeslot_id)
-            
+
         else:
             # Turn off immediately
             print(f"🔌 Schedule ends soon (≤ 5 min) - turning off immediately")
@@ -1096,6 +1275,7 @@ def _cancel_running_schedule(
             turn_off_mqtt(schedule_slot.room_id, mqtt_client)
             
             # For immediate turn-off, remove from running jobs now
+            # Status update will be handled by the normal turn_off cleanup mechanism
             pg_remove_running_turn_on_job(pg_conn_pool, timeslot_id)
         
         # Note: For delayed turn-off (> 5 min case), running job removal is handled by the delayed function
@@ -1140,6 +1320,7 @@ def _cancel_future_schedule(
             return False
         
         print(f"📋 Found future schedule: {schedule_slot.subject} in {schedule_slot.room_id}")
+        print(f"📋 Cancellation will be handled when schedule attempts to execute")
         
         # Handle permanent vs temporary schedule cancellation
         return _handle_schedule_type_cancellation(
@@ -1171,7 +1352,7 @@ def _handle_schedule_type_cancellation(
             # TEMPORARY SCHEDULE: Delete entirely from database
             print(f"🗑️ Temporary schedule - deleting entirely from database")
             
-            # Mark for complete cancellation
+            # Mark for complete cancellation - this will be cleaned up when the schedule completes
             cancelled_schedule = CancelledSchedule(
                 timeslot_id=timeslot_id,
                 cancellation_type="temporary_complete",
@@ -1185,6 +1366,7 @@ def _handle_schedule_type_cancellation(
             
             if success:
                 print(f"✅ Temporary schedule {timeslot_id} marked for complete deletion")
+                print(f"📋 Cancellation cleanup will occur when schedule completes or expires")
                 return True
             else:
                 print(f"❌ Failed to mark temporary schedule for deletion")

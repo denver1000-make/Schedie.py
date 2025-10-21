@@ -656,7 +656,7 @@ def main():
             print(f"Raw message: {message.payload}")
             
     
-    def schedule_received_mqtt(client: mqtt.Client, message: mqtt.MQTTMessage):
+    def  schedule_received_mqtt(client: mqtt.Client, message: mqtt.MQTTMessage):
         import json
         from datetime import datetime
         from src.helper.json_parsing_helper import process_raw_schedule_data
@@ -786,6 +786,7 @@ def main():
                 mqtt_client=client,
                 scheduler=scheduler_v2,  # Pass the scheduler for delayed operations
                 reason=reason,
+                subject="",
                 cancelled_by=cancelled_by
             )
             

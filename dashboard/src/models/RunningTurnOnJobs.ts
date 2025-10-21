@@ -1,9 +1,6 @@
 export interface RunningTurnOnJobs {
-    id: number;
     timeslot_id: string;
     is_temporary: boolean;
-    created_at: Date;
-    updated_at: Date;
 }
 
 export class RunningTurnOnJobsModel {
@@ -31,7 +28,7 @@ export class RunningTurnOnJobsModel {
     `;
 
     static async findAll(client: any): Promise<RunningTurnOnJobs[]> {
-        const query = `SELECT * FROM ${this.tableName} ORDER BY created_at DESC`;
+        const query = `SELECT * FROM ${this.tableName} ORDER BY timeslot_id`;
         const result = await client.query(query);
         return result.rows;
     }
@@ -43,7 +40,7 @@ export class RunningTurnOnJobsModel {
     }
 
     static async findRunningJobs(client: any): Promise<Map<string, RunningTurnOnJobs>> {
-        const query = `SELECT * FROM ${this.tableName} ORDER BY created_at DESC`;
+        const query = `SELECT * FROM ${this.tableName} ORDER BY timeslot_id`;
         const result = await client.query(query);
         
         const runningJobsMap = new Map<string, RunningTurnOnJobs>();
@@ -54,7 +51,7 @@ export class RunningTurnOnJobsModel {
         return runningJobsMap;
     }
 
-    static async create(client: any, data: Omit<RunningTurnOnJobs, 'id' | 'created_at' | 'updated_at'>): Promise<RunningTurnOnJobs> {
+    static async create(client: any, data: RunningTurnOnJobs): Promise<RunningTurnOnJobs> {
         const query = `
             INSERT INTO ${this.tableName} (timeslot_id, is_temporary)
             VALUES ($1, $2)
