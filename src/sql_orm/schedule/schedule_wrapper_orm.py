@@ -65,6 +65,64 @@ def set_all_schedule_wrappers_not_in_use():
     finally:
         session.close()
 
+def get_schedule_wrapper_by_timeslot_id(timeslot_id: str) -> ScheduleWrapperOrm | None:
+    """
+    Get schedule wrapper by looking up through resolved schedule slots.
+    
+    Args:
+        timeslot_id: The timeslot ID to find the schedule wrapper for
+        
+    Returns:
+        ScheduleWrapperOrm: The schedule wrapper if found, None otherwise
+    """
+    session = get_session()
+    try:
+        from src.sql_orm.schedule.resolved_schedule_slots_orm import ResolvedScheduleSlotOrm
+        
+        result = session.query(ScheduleWrapperOrm).join(
+            ResolvedScheduleSlotOrm,
+            ScheduleWrapperOrm.schedule_id == ResolvedScheduleSlotOrm.schedule_id
+        ).filter(
+            ResolvedScheduleSlotOrm.timeslot_id == timeslot_id
+        ).first()
+        
+        return result
+    finally:
+        session.close()
+
+
+def delete_schedule_wrapper_by_id(schedule_id: str) -> bool:
+    """
+    Delete a schedule wrapper by schedule_id.
+    This will also cascade delete all related resolved_schedule_slots.
+    
+    Args:
+        schedule_id: The schedule ID to delete
+        
+    Returns:
+        bool: True if deletion successful, False otherwise
+    """
+    session = get_session()
+    try:
+        deleted_count = session.query(ScheduleWrapperOrm).filter(
+            ScheduleWrapperOrm.schedule_id == schedule_id
+        ).delete()
+        session.commit()
+        
+        if deleted_count > 0:
+            print(f"✅ Deleted schedule wrapper: {schedule_id}")
+            return True
+        else:
+            print(f"⚠️ Schedule wrapper not found: {schedule_id}")
+            return False
+    except Exception as e:
+        session.rollback()
+        print(f"❌ Failed to delete schedule wrapper {schedule_id}: {e}")
+        return False
+    finally:
+        session.close()
+
+
 def clear_all_schedule_wrappers():
     """
     Clear all schedule wrappers from the database.

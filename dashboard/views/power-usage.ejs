@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Power Usage Report - <%= title %></title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
+    <style>
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .stat-card.energy {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .stat-card.efficiency {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .stat-card.cost {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 30px;
+        }
+        .room-badge {
+            background: #6c757d;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            margin: 2px;
+        }
+        .room-badge.active {
+            background: #0d6efd;
+        }
+        .usage-table {
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .filter-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        .alert-power {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            border: none;
+        }
+        .real-time-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #28a745;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h1 class="display-6 mb-1">
+                            <i class="fas fa-bolt text-warning"></i> Power Usage Report
+                        </h1>
+                        <p class="text-muted mb-0">
+                            <span class="real-time-indicator"></span>
+                            Real-time telemetry from ESP32 devices • Last updated: <span id="lastUpdateTime">Just now</span>
+                        </p>
+                    </div>
+                    <div>
+                        <button class="btn btn-outline-primary" onclick="exportReport()">
+                            <i class="fas fa-download"></i> Export Report
+                        </button>
+                        <button class="btn btn-primary" onclick="refreshData()">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Section -->
+        <div class="filter-section">
+            <div class="row">
+                <div class="col-md-3">
+                    <label class="form-label"><i class="fas fa-door-open"></i> Room Selection</label>
+                    <select class="form-select" id="roomFilter" onchange="applyFilters()">
+                        <option value="all">All Rooms</option>
+                        <% availableRooms.forEach(room => { %>
+                            <option value="<%= room %>" <%= selectedRoom === room ? 'selected' : '' %>><%= room %></option>
+                        <% }); %>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label"><i class="fas fa-calendar-alt"></i> Start Date</label>
+                    <input type="date" class="form-control" id="startDate" value="<%= startDate %>" onchange="applyFilters()">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label"><i class="fas fa-calendar-alt"></i> End Date</label>
+                    <input type="date" class="form-control" id="endDate" value="<%= endDate %>" onchange="applyFilters()">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label"><i class="fas fa-chart-line"></i> Report Type</label>
+                    <select class="form-select" id="reportType" onchange="applyFilters()">
+                        <option value="summary">Summary</option>
+                        <option value="hourly">Hourly Trends</option>
+                        <option value="daily">Daily Breakdown</option>
+                        <option value="comparison">Room Comparison</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">Total Power Usage</h6>
+                            <h3 class="mb-0"><%= stats.totalWatts || 0 %>W</h3>
+                        </div>
+                        <i class="fas fa-bolt fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card energy">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">Energy Consumed</h6>
+                            <h3 class="mb-0"><%= stats.totalKwh || 0 %> kWh</h3>
+                        </div>
+                        <i class="fas fa-fire fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card efficiency">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">Average Usage</h6>
+                            <h3 class="mb-0"><%= stats.avgWatts || 0 %>W</h3>
+                        </div>
+                        <i class="fas fa-chart-bar fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card cost">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">Est. Cost (₱12/kWh)</h6>
+                            <h3 class="mb-0">₱<%= stats.estimatedCost || 0 %></h3>
+                        </div>
+                        <i class="fas fa-peso-sign fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Rooms -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-building"></i> Active Rooms (<%= availableRooms.length %>)</h5>
+                    </div>
+                    <div class="card-body">
+                        <% availableRooms.forEach(room => { %>
+                            <span class="room-badge <%= selectedRoom === room ? 'active' : '' %>" 
+                                  onclick="selectRoom('<%= room %>')">
+                                <%= room %>
+                                <% if (roomStats[room]) { %>
+                                    (<%= roomStats[room].currentWatts || 0 %>W)
+                                <% } %>
+                            </span>
+                        <% }); %>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-chart-line"></i> Power Usage Trends</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="powerTrendsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Room Distribution</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="roomDistributionChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- High Usage Alert -->
+        <% if (stats.highUsageRooms && stats.highUsageRooms.length > 0) { %>
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="alert alert-power" role="alert">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>High Usage Alert!</strong>
+                    The following rooms have unusually high power consumption:
+                    <% stats.highUsageRooms.forEach(room => { %>
+                        <span class="badge bg-light text-dark ms-2"><%= room.room_id %>: <%= room.watts %>W</span>
+                    <% }); %>
+                </div>
+            </div>
+        </div>
+        <% } %>
+
+        <!-- Data Table -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card usage-table">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-table"></i> Detailed Usage Data</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Room ID</th>
+                                        <th>Date</th>
+                                        <th>Avg Power (W)</th>
+                                        <th>Peak Power (W)</th>
+                                        <th>Min Power (W)</th>
+                                        <th>Energy (kWh)</th>
+                                        <th>Readings</th>
+                                        <th>Est. Cost (₱)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <% if (usageData && usageData.length > 0) { %>
+                                        <% usageData.forEach(data => { %>
+                                        <tr>
+                                            <td>
+                                                <span class="badge bg-primary"><%= data.room_id %></span>
+                                            </td>
+                                            <td><%= data.date %></td>
+                                            <td><%= data.avg_watts %></td>
+                                            <td><%= data.max_watts %></td>
+                                            <td><%= data.min_watts %></td>
+                                            <td><%= data.kwh_consumed %></td>
+                                            <td><%= data.total_readings %></td>
+                                            <td>₱<%= (data.kwh_consumed * 12).toFixed(2) %></td>
+                                        </tr>
+                                        <% }); %>
+                                    <% } else { %>
+                                        <tr>
+                                            <td colspan="8" class="text-center text-muted">
+                                                <i class="fas fa-info-circle"></i>
+                                                No power usage data found for the selected criteria.
+                                            </td>
+                                        </tr>
+                                    <% } %>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Initialize charts
+        let powerTrendsChart;
+        let roomDistributionChart;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeCharts();
+            updateLastUpdateTime();
+            
+            // Auto-refresh every 30 seconds
+            setInterval(() => {
+                updateLastUpdateTime();
+            }, 30000);
+        });
+
+        function initializeCharts() {
+            // Power Trends Chart
+            const trendsCtx = document.getElementById('powerTrendsChart').getContext('2d');
+            powerTrendsChart = new Chart(trendsCtx, {
+                type: 'line',
+                data: {
+                    labels: <%- JSON.stringify(chartData.timeLabels || []) %>,
+                    datasets: [{
+                        label: 'Power Usage (W)',
+                        data: <%- JSON.stringify(chartData.powerData || []) %>,
+                        borderColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Power (Watts)'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Room Distribution Chart
+            const distributionCtx = document.getElementById('roomDistributionChart').getContext('2d');
+            roomDistributionChart = new Chart(distributionCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: <%- JSON.stringify(chartData.roomLabels || []) %>,
+                    datasets: [{
+                        data: <%- JSON.stringify(chartData.roomData || []) %>,
+                        backgroundColor: [
+                            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
+                            '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        function applyFilters() {
+            const room = document.getElementById('roomFilter').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const reportType = document.getElementById('reportType').value;
+            
+            const url = new URL(window.location);
+            url.searchParams.set('room', room);
+            url.searchParams.set('startDate', startDate);
+            url.searchParams.set('endDate', endDate);
+            url.searchParams.set('reportType', reportType);
+            
+            window.location.href = url.toString();
+        }
+
+        function selectRoom(roomId) {
+            document.getElementById('roomFilter').value = roomId;
+            applyFilters();
+        }
+
+        function refreshData() {
+            window.location.reload();
+        }
+
+        function exportReport() {
+            const room = document.getElementById('roomFilter').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            window.open(`/power-usage/export?room=${room}&startDate=${startDate}&endDate=${endDate}`, '_blank');
+        }
+
+        function updateLastUpdateTime() {
+            document.getElementById('lastUpdateTime').textContent = new Date().toLocaleTimeString();
+        }
+    </script>
+</body>
+</html>

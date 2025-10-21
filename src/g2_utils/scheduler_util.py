@@ -1,6 +1,5 @@
 import datetime
 from typing import Any, List
-from zoneinfo import ZoneInfo
 import apscheduler.schedulers.background as scheduler
 from apscheduler.triggers.base import BaseTrigger
 from apscheduler.triggers.cron import CronTrigger
@@ -8,17 +7,15 @@ from apscheduler.triggers.date import DateTrigger
 from src.g2_utils.jobs.jobs_g2 import turn_off_proc, turn_on_proc, warning_proc
 from src.sql_orm.cancellation.cancelled_schedule_orm import check_if_timeslot_cancelled
 from src.sql_orm.schedule.resolved_schedule_slots_orm import ResolvedScheduleSlotOrm
+from src.constants import DEVICE_TZ, MINUTE_MARK_TO_WARN, MINUTE_MARK_TO_SKIP
 from paho.mqtt.client import Client
-
-# Define DEVICE_TZ locally to avoid circular import
-DEVICE_TZ = ZoneInfo("Asia/Manila")
 
 def schedule_resolved_slots(
     scheduler: scheduler.BackgroundScheduler, 
     mqtt_client: Client,
     resolved_slots: List[ResolvedScheduleSlotOrm],
-    minute_mark_to_skip: int = 30,
-    minute_mark_to_warn: int = 2
+    minute_mark_to_skip: int = MINUTE_MARK_TO_SKIP,
+    minute_mark_to_warn: int = MINUTE_MARK_TO_WARN
 ):
     current_time = datetime.datetime.now(tz=DEVICE_TZ)
     

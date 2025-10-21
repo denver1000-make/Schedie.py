@@ -21,7 +21,7 @@ from src.json.cancellation_parser import CancellationRequestJson
 from src.json.temporary_schedule_parser import TemporaryScheduleJson, parse_temporary_schedule_json, convert_temp_schedule_to_orm, get_temp_schedule_summary
 from src.g2_utils.scheduler_util import schedule_resolved_slots
 from src.sql_orm.schedule.resolved_schedule_slots_orm import ResolvedScheduleSlotOrm, get_resolved_slots_by_schedule_id, insert_resolved_schedule_slots
-from src.sql_orm.schedule.schedule_wrapper_orm import ScheduleWrapperOrm, get_in_use_schedule, insert_schedule_wrapper, set_all_schedule_wrappers_not_in_use, schedule_exists
+from src.sql_orm.schedule.schedule_wrapper_orm import ScheduleWrapperOrm, get_in_use_schedule, insert_schedule_wrapper, set_all_schedule_wrappers_not_in_use, schedule_exists, get_schedule_wrapper_by_timeslot_id, delete_schedule_wrapper_by_id
 from src.json.schedule_parser import ScheduleWrapperJson, extract_resolved_slots_from_json, parse_schedule_wrapper_json
 from src.sql_orm.connection.sqlalchemy_pg import SessionFactory, initialize_global_engine, get_session
 from src.mqtt.mqtt_manager import (
@@ -32,10 +32,8 @@ from src.mqtt.mqtt_manager import (
 from src.sql.db_connection import get_pg_connection
 from src.schedulerv2.scheduler_v2 import init_scheduler
 
-# Constants
-DEVICE_TZ = ZoneInfo("Asia/Manila")
-MINUTE_MARK_TO_WARN = 2  # Minutes before schedule end to send warning
-MINUTE_MARK_TO_SKIP = 2  # Minutes to check for nearby schedules
+# Import constants from centralized location
+from src.constants import DEVICE_TZ, MINUTE_MARK_TO_WARN, MINUTE_MARK_TO_SKIP
 
 # Import MQTT topic constants from mqtt_manager (same as main_v3)
 from src.mqtt.mqtt_manager import (
@@ -304,13 +302,20 @@ def main():
             
             running_job = get_running_job(canc_obj.timeslot_id)
             
-            # ALWAYS store cancellation record in database for ALL cancellations
+            # Check if schedule time has passed for today's cancellations
+            schedule_has_passed = False
+            if is_today_cancellation:
+                schedule_end_time = datetime.time(schedule_slot.end_hour, schedule_slot.end_minute)
+                current_time = time_now.time()
+                schedule_has_passed = current_time > schedule_end_time
+            
+            # Always create and store cancellation record first
             cancelled_date = f"{canc_obj.year:04d}-{canc_obj.month:02d}-{canc_obj.day_of_month:02d}"
             
             cancelled_schedule = CancelledScheduleOrm(
                 cancellation_id=canc_obj.cancellation_id,
                 timeslot_id=canc_obj.timeslot_id,
-                cancellation_type="permanent_instance" if not schedule_slot.is_temporary else "temporary_instance",
+                cancellation_type="temporary_instance" if schedule_slot.is_temporary else "permanent_instance",
                 cancelled_at=time_now,
                 cancelled_date=cancelled_date,
                 reason=canc_obj.reason,
@@ -328,40 +333,121 @@ def main():
                 end_time=schedule_slot.end_time
             )
             
-            insert_success = insert_cancellation_info(cancelled_schedule)
-            if insert_success:
-                print(f"✅ Stored cancellation record for {cancelled_date}, timeslot {canc_obj.timeslot_id}")
-            else:
-                print(f"❌ Failed to store cancellation record")
+            insert_cancellation_info(cancelled_schedule)
+            print(f"✅ Stored cancellation record for {cancelled_date}, timeslot {canc_obj.timeslot_id}")
+            
+            # Handle immediate action based on schedule type and state
+            if is_today_cancellation and running_job and not schedule_has_passed:
+                # Schedule is currently running - send warning and shutdown in 1 minute (same for both permanent and temporary)
+                send_shutdown_warning(
+                    mqtt_client=mqtt_client,
+                    room_id=canc_obj.room_id
+                )
                 
-            # Handle immediate shutdown for today's running schedules
-            if schedule_slot.is_temporary or (not schedule_slot.is_temporary and is_today_cancellation and running_job):
-                if running_job:
-                    send_shutdown_warning(
-                        mqtt_client=mqtt_client,
-                        room_id=canc_obj.room_id
+                shutdown_time = time_now + datetime.timedelta(minutes=1)
+                
+                def shutdown_cancelled_room():
+                    mqtt_turn_off(
+                        room_id=canc_obj.room_id,
+                        mqtt_client=mqtt_client
                     )
+                    remove_running_job(canc_obj.timeslot_id)
                     
-                    # Fixed: Change from 5 minutes to 1 minute
-                    shutdown_time = time_now + datetime.timedelta(minutes=1)
-                    
-                    def shutdown_cancelled_room():
-                        mqtt_turn_off(
-                            room_id=canc_obj.room_id,
-                            mqtt_client=mqtt_client
-                        )
-                        remove_running_job(canc_obj.timeslot_id)
-                    
-                    scheduler.add_job(
-                        func=shutdown_cancelled_room,
-                        trigger=DateTrigger(run_date=shutdown_time),
-                        id=f"cancel_shutdown_{canc_obj.timeslot_id}",
-                        replace_existing=True
-                    )
-                    
-                    print(f"✅ Scheduled shutdown for running room {canc_obj.room_id} in 1 minute (Today's cancellation)")
+                    # If it's a temporary schedule, delete it completely after shutdown
+                    if schedule_slot.is_temporary:
+                        schedule_wrapper = get_schedule_wrapper_by_timeslot_id(canc_obj.timeslot_id)
+                        if schedule_wrapper:
+                            # Remove any scheduled jobs for this temporary schedule
+                            try:
+                                # Remove turn_on and turn_off jobs
+                                job_turn_on_id = f"{canc_obj.timeslot_id}_turn_on"
+                                job_turn_off_id = f"{canc_obj.timeslot_id}_turn_off"
+                                job_warning_id = f"{canc_obj.timeslot_id}_warning"
+                                
+                                for job_id in [job_turn_on_id, job_turn_off_id, job_warning_id]:
+                                    try:
+                                        scheduler.remove_job(job_id)
+                                        print(f"🗑️ Removed scheduled job: {job_id}")
+                                    except Exception as e:
+                                        # Job might not exist, which is fine
+                                        pass
+                                        
+                            except Exception as e:
+                                print(f"⚠️ Error removing scheduled jobs for {canc_obj.timeslot_id}: {e}")
+                            
+                            delete_success = delete_schedule_wrapper_by_id(schedule_wrapper.schedule_id)
+                            if delete_success:
+                                print(f"🗑️ Deleted temporary schedule {schedule_wrapper.schedule_id} after cancellation")
+                            else:
+                                print(f"⚠️ Failed to delete temporary schedule {schedule_wrapper.schedule_id}")
+                
+                scheduler.add_job(
+                    func=shutdown_cancelled_room,
+                    trigger=DateTrigger(run_date=shutdown_time),
+                    id=f"cancel_shutdown_{canc_obj.timeslot_id}",
+                    replace_existing=True
+                )
+                
+                print(f"✅ Scheduled shutdown for running room {canc_obj.room_id} in 1 minute")
+            elif is_today_cancellation and schedule_has_passed:
+                print(f"ℹ️ Cancellation for {canc_obj.room_id} received but schedule already ended")
+                
+                # If it's a temporary schedule that has already ended, delete it
+                if schedule_slot.is_temporary:
+                    schedule_wrapper = get_schedule_wrapper_by_timeslot_id(canc_obj.timeslot_id)
+                    if schedule_wrapper:
+                        # Remove any scheduled jobs for this temporary schedule
+                        try:
+                            job_turn_on_id = f"{canc_obj.timeslot_id}_turn_on"
+                            job_turn_off_id = f"{canc_obj.timeslot_id}_turn_off"
+                            job_warning_id = f"{canc_obj.timeslot_id}_warning"
+                            
+                            for job_id in [job_turn_on_id, job_turn_off_id, job_warning_id]:
+                                try:
+                                    scheduler.remove_job(job_id)
+                                    print(f"🗑️ Removed scheduled job: {job_id}")
+                                except Exception:
+                                    pass
+                                    
+                        except Exception as e:
+                            print(f"⚠️ Error removing scheduled jobs for {canc_obj.timeslot_id}: {e}")
+                        
+                        delete_success = delete_schedule_wrapper_by_id(schedule_wrapper.schedule_id)
+                        if delete_success:
+                            print(f"🗑️ Deleted ended temporary schedule {schedule_wrapper.schedule_id}")
+                        else:
+                            print(f"⚠️ Failed to delete temporary schedule {schedule_wrapper.schedule_id}")
+            else:
+                # Future schedule or not running today
+                if schedule_slot.is_temporary and not running_job:
+                    # For temporary schedules that are not currently running, delete immediately
+                    schedule_wrapper = get_schedule_wrapper_by_timeslot_id(canc_obj.timeslot_id)
+                    if schedule_wrapper:
+                        # Remove any scheduled jobs for this temporary schedule
+                        try:
+                            job_turn_on_id = f"{canc_obj.timeslot_id}_turn_on"
+                            job_turn_off_id = f"{canc_obj.timeslot_id}_turn_off"
+                            job_warning_id = f"{canc_obj.timeslot_id}_warning"
+                            
+                            for job_id in [job_turn_on_id, job_turn_off_id, job_warning_id]:
+                                try:
+                                    scheduler.remove_job(job_id)
+                                    print(f"🗑️ Removed scheduled job: {job_id}")
+                                except Exception:
+                                    pass
+                                    
+                        except Exception as e:
+                            print(f"⚠️ Error removing scheduled jobs for {canc_obj.timeslot_id}: {e}")
+                        
+                        delete_success = delete_schedule_wrapper_by_id(schedule_wrapper.schedule_id)
+                        if delete_success:
+                            print(f"🗑️ Deleted temporary schedule {schedule_wrapper.schedule_id} (not running)")
+                        else:
+                            print(f"⚠️ Failed to delete temporary schedule {schedule_wrapper.schedule_id}")
+                    else:
+                        print(f"⚠️ Could not find schedule wrapper for temporary schedule {canc_obj.timeslot_id}")
                 else:
-                    print(f"✅ Cancellation processed for today but schedule not currently running")    
+                    print(f"ℹ️ Cancellation for {canc_obj.room_id} - future permanent schedule or not running")        
             
     
             ack_payload = {
