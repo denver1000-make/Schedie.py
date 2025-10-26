@@ -6,16 +6,11 @@ services:
     container_name: dashboard_container
     ports:
       - "80:8080" # web dashboard accessible at http://localhost:8080
-    networks:
-      - default
-      - shared_test_network_mqtt
     depends_on:
       mosquitto_rpi:
         condition: service_started
       postgres:
         condition: service_healthy
-    volumes:
-      - ./dashboard:/app
   postgres:
     image: timescale/timescaledb:latest-pg17
     container_name: postgres_db
@@ -28,9 +23,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-    networks:
-      - shared_test_network_mqtt
-      - default
     ports:
       - "5432:5432"
     volumes:
@@ -40,9 +32,6 @@ services:
   mosquitto_rpi:
     image: eclipse-mosquitto
     container_name: mosquitto_broker
-    networks:
-      - shared_test_network_mqtt
-      - default
     ports:
       - "9001:9001"
       - "1883:1883"
@@ -51,10 +40,10 @@ services:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/log:/mosquitto/log
   app:
-    image: denver6000/app:latest
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
     container_name: app_container
-    networks:
-      - default
     depends_on:
       mosquitto_rpi:
         condition: service_started
@@ -63,11 +52,7 @@ services:
     environment:
       ENV_FILE: /app/config/.env
     volumes:
-      - ./src:/app/src
       - ./config:/app/config
 volumes:
   postgres_data:
     driver: local
-networks:
-    shared_test_network_mqtt:
-        external: true

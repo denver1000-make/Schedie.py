@@ -1,0 +1,45 @@
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+.env/
+.env.*
+
+# Logs
+*.log
+
+# Editor / IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dev container config
+.devcontainer/
+docker-compose.override.yml
+
+# Build artifacts
+build/
+dist/
+*.tar.gz
+*.whl
+
+# Node (if any frontend inside project)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Misc
+*.bak
+*.tmp

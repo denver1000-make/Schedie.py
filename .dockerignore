@@ -3,3 +3,4 @@ requirements.txt
 gcp-enabled-priv-key-firebase.json
 pwfile.txt
 mosquitto.conf
+Dockerfile
