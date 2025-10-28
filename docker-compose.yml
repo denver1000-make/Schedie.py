@@ -51,7 +51,9 @@ services:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/log:/mosquitto/log
   app:
-    image: denver6000/app:latest
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
     container_name: app_container
     networks:
       - default
@@ -65,6 +67,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./config:/app/config
+    entrypoint: ["sleep", "infinity"]
 volumes:
   postgres_data:
     driver: local

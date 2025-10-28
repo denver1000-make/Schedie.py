@@ -53,6 +53,7 @@ services:
       ENV_FILE: /app/config/.env
     volumes:
       - ./config:/app/config
+    entrypoint: ["sleep", "infinity"]
 volumes:
   postgres_data:
     driver: local

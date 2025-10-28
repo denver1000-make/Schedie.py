@@ -119,19 +119,25 @@ def on_connect(client, userdata, flags, rc, properties=None):
         print(f"[MQTT] Auto-subscribed to: {topic} - Result: {result}")
 
 def on_message(client: mqtt.Client, userdata, msg: mqtt.MQTTMessage):
-    print(f"[MQTT] Message received on topic: {msg.topic} - Payload: {msg.payload}")
+    # Reduce logging for high-frequency usage_report topics
+    is_usage_report = msg.topic.startswith('usage_report/')
+    
+    if not is_usage_report:
+        print(f"[MQTT] Message received on topic: {msg.topic} - Payload: {msg.payload}")
     
     # Find matching handlers
     matched = False
     for topic_pattern, callback in _topic_handlers:
         if _topic_matches(topic_pattern, msg.topic):
-            print(f"[MQTT] Executing callback for pattern: {topic_pattern}")
+            if not is_usage_report:
+                print(f"[MQTT] Executing callback for pattern: {topic_pattern}")
             callback(client, msg)
             matched = True
         else:
-            print(f"[MQTT] Pattern '{topic_pattern}' does not match topic '{msg.topic}'")
+            if not is_usage_report:
+                print(f"[MQTT] Pattern '{topic_pattern}' does not match topic '{msg.topic}'")
     
-    if not matched:
+    if not matched and not is_usage_report:
         print("[MQTT] No handler found for this topic")
 
 # Publisher functions remain the same

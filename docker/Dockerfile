@@ -8,4 +8,4 @@ RUN ls
 RUN pip install --default-timeout=100 --upgrade pip
 RUN pip install --default-timeout=100 --no-cache-dir -r requirements.txt
 
-ENTRYPOINT ["python", "-m", "src.main_g2"]
+ENTRYPOINT ["sleep", "infinity"]

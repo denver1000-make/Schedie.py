@@ -94,7 +94,7 @@ def get_schedule_wrapper_by_timeslot_id(timeslot_id: str) -> ScheduleWrapperOrm 
 def delete_schedule_wrapper_by_id(schedule_id: str) -> bool:
     """
     Delete a schedule wrapper by schedule_id.
-    This will also cascade delete all related resolved_schedule_slots.
+    Manually deletes related resolved_schedule_slots first, then the wrapper.
     
     Args:
         schedule_id: The schedule ID to delete
@@ -104,12 +104,24 @@ def delete_schedule_wrapper_by_id(schedule_id: str) -> bool:
     """
     session = get_session()
     try:
-        deleted_count = session.query(ScheduleWrapperOrm).filter(
+        # Import here to avoid circular imports
+        from src.sql_orm.schedule.resolved_schedule_slots_orm import ResolvedScheduleSlotOrm
+        
+        # First, manually delete all resolved schedule slots for this schedule_id
+        slots_deleted = session.query(ResolvedScheduleSlotOrm).filter(
+            ResolvedScheduleSlotOrm.schedule_id == schedule_id
+        ).delete()
+        
+        print(f"🗑️ Deleted {slots_deleted} resolved schedule slots for schedule_id: {schedule_id}")
+        
+        # Then delete the schedule wrapper
+        wrapper_deleted = session.query(ScheduleWrapperOrm).filter(
             ScheduleWrapperOrm.schedule_id == schedule_id
         ).delete()
+        
         session.commit()
         
-        if deleted_count > 0:
+        if wrapper_deleted > 0:
             print(f"✅ Deleted schedule wrapper: {schedule_id}")
             return True
         else:
