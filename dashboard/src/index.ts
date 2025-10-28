@@ -2,9 +2,23 @@ import express from 'express';
 import { Pool } from 'pg';
 import * as mqtt from 'mqtt';
 import * as path from 'path';
+import * as dotenv from 'dotenv';
+
+// Load environment variables from .env file
+dotenv.config({ path: process.env.ENV_FILE || '/app/config/.env' });
 
 const app = express();
 const port = 8080;
+
+// Log configuration for debugging
+console.log('Environment Configuration:');
+console.log('- ENV_FILE:', process.env.ENV_FILE);
+console.log('- POSTGRES_HOST:', process.env.POSTGRES_HOST);
+console.log('- POSTGRES_USER:', process.env.POSTGRES_USER);
+console.log('- POSTGRES_DB:', process.env.POSTGRES_DB);
+console.log('- MQTT_URL:', process.env.MQTT_URL);
+console.log('- MQTT_PORT:', process.env.MQTT_PORT);
+console.log('- MQTT_USERNAME:', process.env.MQTT_USERNAME);
 
 // Set EJS as the template engine
 app.set('view engine', 'ejs');
@@ -12,19 +26,19 @@ app.set('views', path.join(__dirname, '../views'));
 
 // Database connection
 const pool = new Pool({
-    user: 'postgres',
-    password: 'postgres',
-    host: 'postgres',
-    port: 5432,
-    database: 'schedule_db'
+    user: process.env.POSTGRES_USER || 'postgres',
+    password: process.env.POSTGRES_PASSWORD || 'postgres',
+    host: process.env.POSTGRES_HOST || 'postgres',
+    port: parseInt(process.env.POSTGRES_PORT || '5432'),
+    database: process.env.POSTGRES_DB || 'schedule_db'
 });
 
 // MQTT client setup for power usage monitoring
-const brokerUrl = 'mqtt://mosquitto_rpi:1883';
+const brokerUrl = `mqtt://${process.env.MQTT_URL || 'mosquitto_rpi'}:${process.env.MQTT_PORT || 1883}`;
 const mqttOptions = {
-    username: 'denver',
-    password: 'denver',
-    port: 1883
+    username: process.env.MQTT_USERNAME || 'denver',
+    password: process.env.MQTT_PASSWORD || 'denver',
+    port: parseInt(process.env.MQTT_PORT || '1883')
 };
 
 const client = mqtt.connect(brokerUrl, mqttOptions);

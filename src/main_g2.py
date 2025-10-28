@@ -690,6 +690,130 @@ def main():
         receive_usage_report
     )
     
+    # System restart recovery procedure
+    def recover_system_state():
+        """
+        Recovery procedure to handle system restarts by checking current time
+        against active schedules and restoring appropriate room states.
+        Handles any scenario where the system was turned off and restarted.
+        """
+        print("🔄 Starting system state recovery procedure...")
+        
+        from src.sql_orm.turn_on_jobs.turn_on_job_orm import remove_running_job, insert_running_job
+        from src.g2_utils.mqtt.mqtt_funcs_g2 import mqtt_turn_on, mqtt_turn_off
+        from datetime import datetime, time
+        
+        current_time = datetime.now(tz=DEVICE_TZ)
+        current_day_name = current_time.strftime("%A").lower()
+        current_time_obj = current_time.time()
+        
+        print(f"🕐 Current time: {current_time.strftime('%A %H:%M:%S')}")
+        
+        # Get the active schedule
+        schedule_in_use = get_in_use_schedule()
+        if not schedule_in_use:
+            print("ℹ️ No active schedule found - recovery complete")
+            return
+        
+        # Get all resolved slots for the active schedule
+        resolved_slots = get_resolved_slots_by_schedule_id(schedule_in_use.schedule_id)
+        
+        # Check each slot to see if it should be active right now
+        active_rooms = set()
+        for slot in resolved_slots:
+            # Skip if not today's schedule
+            if slot.day_name.lower() != current_day_name:
+                continue
+                
+            # Create time objects for comparison
+            slot_start_time = time(slot.start_hour, slot.start_minute)
+            slot_end_time = time(slot.end_hour, slot.end_minute)
+            
+            # Check if current time falls within this schedule slot
+            if slot_start_time <= current_time_obj <= slot_end_time:
+                print(f"📍 Found active schedule: {slot.room_id} ({slot.subject}) {slot.start_time}-{slot.end_time}")
+                active_rooms.add(slot.room_id)
+                
+                # Check if running job exists for this timeslot
+                existing_job = get_running_job(slot.timeslot_id)
+                if not existing_job:
+                    # Create missing running job
+                    from src.sql_orm.turn_on_jobs.turn_on_job_orm import RunningTurnOnJobOrm
+                    new_running_job = RunningTurnOnJobOrm(
+                        timeslot_id=slot.timeslot_id,
+                        is_temporary=slot.is_temporary
+                    )
+                    insert_running_job(new_running_job)
+                    print(f"✅ Restored running job for {slot.timeslot_id}")
+                
+                # Turn on the room (ESP32 will handle if already on)
+                mqtt_turn_on(
+                    room_id=slot.room_id,
+                    mqtt_client=mqtt_client
+                )
+                print(f"🔛 Sent turn ON command to room {slot.room_id}")
+        
+        # Also check for rooms that might have running jobs but shouldn't be active
+        # This handles cases where schedules ended during system downtime
+        session = get_session()
+        try:
+            from src.sql_orm.turn_on_jobs.turn_on_job_orm import RunningTurnOnJobOrm
+            
+            # Join query to get all data in one go and avoid detached instance issues
+            running_jobs_data = session.query(
+                RunningTurnOnJobOrm.timeslot_id,
+                RunningTurnOnJobOrm.is_temporary,
+                ResolvedScheduleSlotOrm.day_name,
+                ResolvedScheduleSlotOrm.start_hour,
+                ResolvedScheduleSlotOrm.start_minute,
+                ResolvedScheduleSlotOrm.end_hour,
+                ResolvedScheduleSlotOrm.end_minute,
+                ResolvedScheduleSlotOrm.room_id,
+                ResolvedScheduleSlotOrm.subject
+            ).join(
+                ResolvedScheduleSlotOrm,
+                RunningTurnOnJobOrm.timeslot_id == ResolvedScheduleSlotOrm.timeslot_id
+            ).all()
+            
+        finally:
+            session.close()
+        
+        # Process the data after session is closed (no ORM instances to worry about)
+        for job_data in running_jobs_data:
+            (job_timeslot_id, job_is_temporary, slot_day_name, slot_start_hour, 
+             slot_start_minute, slot_end_hour, slot_end_minute, slot_room_id, slot_subject) = job_data
+            
+            # Skip if not today's schedule
+            if slot_day_name.lower() != current_day_name:
+                continue
+
+            slot_start_time = time(slot_start_hour, slot_start_minute)
+            slot_end_time = time(slot_end_hour, slot_end_minute)
+
+            # If current time is outside schedule window, remove running job and turn off room
+            if not (slot_start_time <= current_time_obj <= slot_end_time):
+                print(f"📍 Found expired running job: {slot_room_id} ({slot_subject})")
+
+                # Remove running job (uses separate session internally)
+                remove_running_job(job_timeslot_id)
+                print(f"🗑️ Removed expired running job for {job_timeslot_id}")
+
+                # Turn off room if it's not needed by any other active schedule
+                if slot_room_id not in active_rooms:
+                    mqtt_turn_off(
+                        room_id=slot_room_id,
+                        mqtt_client=mqtt_client
+                    )
+                    print(f"🔴 Sent turn OFF command to room {slot_room_id}")
+        
+        if active_rooms:
+            print(f"🏠 Recovery complete - {len(active_rooms)} rooms should be active: {', '.join(active_rooms)}")
+        else:
+            print("🏠 Recovery complete - no rooms should be active at this time")
+    
+    # Run system state recovery procedure
+    recover_system_state()
+    
     schedule_in_use = get_in_use_schedule()
     
     if schedule_in_use:

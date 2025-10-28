@@ -9,6 +9,8 @@ services:
     networks:
       - default
       - shared_test_network_mqtt
+    environment:
+      ENV_FILE: /app/config/.env
     depends_on:
       mosquitto_rpi:
         condition: service_started
@@ -16,6 +18,7 @@ services:
         condition: service_healthy
     volumes:
       - ./dashboard:/app
+      - ./config:/app/config
   postgres:
     image: timescale/timescaledb:latest-pg17
     container_name: postgres_db
@@ -55,8 +58,6 @@ services:
       context: .
       dockerfile: ./docker/Dockerfile
     container_name: app_container
-    networks:
-      - default
     depends_on:
       mosquitto_rpi:
         condition: service_started
@@ -65,9 +66,7 @@ services:
     environment:
       ENV_FILE: /app/config/.env
     volumes:
-      - ./src:/app/src
       - ./config:/app/config
-    entrypoint: ["sleep", "infinity"]
 volumes:
   postgres_data:
     driver: local
